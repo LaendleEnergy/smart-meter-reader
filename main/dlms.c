@@ -44,7 +44,7 @@ int8_t dlms_set_data(dlms_data_t * dlms, mbus_packet_t * mbus_list, size_t mbus_
             }
         }else if(sizeof(dlms->apdu)>=current_apdu_length+mbus->data_length && current_apdu_length<dlms->apdu_length){
             memcpy(dlms->apdu+current_apdu_length, mbus->data, mbus->data_length);
-            current_apdu_length = dlms->apdu_length+mbus->data_length;
+            current_apdu_length = current_apdu_length+mbus->data_length;
         }
         
     }
@@ -72,3 +72,5 @@ size_t decrypt_aes_gcm(uint8_t * key, uint8_t key_len, uint8_t * iv, uint8_t iv_
 
     return output_size;
 }
+
+

@@ -4,12 +4,20 @@
 #include <driver/uart.h>
 #include <string.h>
 
+#ifndef MBUS_UART
 #define MBUS_UART UART_NUM_1
-#define MBUS_RING_BUFFER 1024
+#endif
+#ifndef MBUS_BUFFER_SIZE
+#define MBUS_BUFFER_SIZE 1024
+#endif
+
+#ifndef MBUS_RX
+#define MBUS_RX 5
+#endif
 
 typedef struct{
     uint8_t uart_num;
-    uint8_t buffer[MBUS_RING_BUFFER];
+    uint8_t buffer[MBUS_BUFFER_SIZE];
 }mbus_t;
 
 
@@ -31,5 +39,6 @@ typedef struct {
 
 void mbus_init();
 size_t mbus_receive_multiple(mbus_packet_t * mbus_list, size_t count);
+void mbus_parse_from_buffer(mbus_packet_t * mbus_packet, uint8_t * buffer);
 
 #endif

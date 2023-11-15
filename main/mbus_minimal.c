@@ -13,11 +13,11 @@ void mbus_init(){
     };
     // Configure UART parameters
     uart_param_config(MBUS_UART, &uart_config);
-    uart_set_pin(MBUS_UART, -1, 5, -1, -1);
-    uart_driver_install(MBUS_UART, MBUS_RING_BUFFER, 0, 0, NULL, 0);
+    uart_set_pin(MBUS_UART, -1, MBUS_RX, -1, -1);
+    uart_driver_install(MBUS_UART, MBUS_BUFFER_SIZE, 0, 0, NULL, 0);
 
     mbus.uart_num = MBUS_UART;
-    memset(mbus.buffer, 0, MBUS_RING_BUFFER);
+    memset(mbus.buffer, 0, MBUS_BUFFER_SIZE);
 
 }
 
@@ -35,7 +35,7 @@ uint8_t mbus_calc_checksum(mbus_packet_t * mbus_packet){
 
 int16_t mbus_receive(mbus_packet_t * mbus_packet){
     uint8_t start_buffer = 0;
-    memset(mbus.buffer, 0, MBUS_RING_BUFFER);
+    memset(mbus.buffer, 0, MBUS_BUFFER_SIZE);
     do{
 
         uart_read_bytes(MBUS_UART, &start_buffer, 1, 100);
@@ -49,7 +49,7 @@ int16_t mbus_receive(mbus_packet_t * mbus_packet){
     mbus_packet->start = mbus.buffer[0];
     mbus_packet->length = mbus.buffer[1];
 
-    if(mbus_packet->length>MBUS_RING_BUFFER){
+    if(mbus_packet->length>MBUS_BUFFER_SIZE){
         return -1;
     }
     

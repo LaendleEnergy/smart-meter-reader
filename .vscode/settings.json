@@ -14,5 +14,8 @@
     "idf.portWin": "COM16",
     "idf.pythonBinPathWin": "C:/Espressif/python_env/idf5.0_py3.8_env/Scripts/python.exe",
     "idf.toolsPathWin": "C:\\Espressif",
-    "idf.flashType": "JTAG"
+    "idf.flashType": "JTAG",
+    "files.associations": {
+        "mbus_minimal.h": "c"
+    }
 }
