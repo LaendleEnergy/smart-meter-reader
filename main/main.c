@@ -5,9 +5,6 @@
 #include <stdlib.h>
 
 
-
-
-
 // MBUS Defines
 #define MBUS_UART UART_NUM_1
 #define MBUS_RX 5
@@ -18,10 +15,6 @@
 #define KEY_SIZE 16
 #define START_VECTOR_SIZE 12
 #define PLAINTEXT_SIZE 512
-
-#include "mbus_minimal.h"
-#include "dlms.h"
-#include "kaifa.h"
 
 //Modem Defines
 #define MODEM_UART UART_NUM_0
@@ -35,7 +28,11 @@
 
 #define MODEM_APN "iot.1nce.net"
 #define SERVER "45.145.224.10"
-#define PORT "1884"
+#define PORT "1883"
+
+#include "mbus_minimal.h"
+#include "dlms.h"
+#include "kaifa.h"
 
 #include "sim7020e.h"
 
@@ -55,9 +52,6 @@ void to_hex_string(char * hex_buffer, uint16_t hex_buffer_size, uint8_t * buffer
         buf_ptr += sprintf(buf_ptr, "%02X", buffer[i]);
     }
 }
-
-
-
 
 
 
@@ -155,7 +149,11 @@ void mbus_thread(void * param){
 }
 
 void modem_thread(void * param){
+
+    // esp_netif_init();
+
     sim7020e_init();
+    sim7020e_connect_tcp(SERVER, PORT);
 }
 
 void app_main(void){
