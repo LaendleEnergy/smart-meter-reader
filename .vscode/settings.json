@@ -16,6 +16,9 @@
     "idf.toolsPathWin": "C:\\Espressif",
     "idf.flashType": "JTAG",
     "files.associations": {
-        "mbus_minimal.h": "c"
+        "mbus_minimal.h": "c",
+        "easy_mqtt_client.h": "c",
+        "freertos.h": "c",
+        "my_mqtt_client.h": "c"
     }
 }

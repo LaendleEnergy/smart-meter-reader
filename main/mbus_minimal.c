@@ -53,7 +53,7 @@ int16_t mbus_receive(mbus_packet_t * mbus_packet){
         return -1;
     }
     
-    uart_read_bytes(MBUS_UART, &mbus.buffer[4], mbus_packet->length+2, 2000);
+    uart_read_bytes(MBUS_UART, &mbus.buffer[4], mbus_packet->length+2, 2000/portTICK_PERIOD_MS);
 
     mbus_packet->control = mbus.buffer[4];
     mbus_packet->address = mbus.buffer[5];
@@ -67,17 +67,25 @@ int16_t mbus_receive(mbus_packet_t * mbus_packet){
 
     mbus_packet->checksum_calc = mbus_calc_checksum(mbus_packet);
 
-    // if(mbus_packet->checksum_calc!=mbus_packet->checksum){
-    //     return -1;
-    // }
+    if(mbus_packet->stop==0x16){
+        ESP_LOGI("MBUS", "Complete Frame read");
+    }else{
+        ESP_LOGE("MBUS", "Stop is not 0x16!");
+    }
+
+    if(mbus_packet->checksum_calc==mbus_packet->checksum){
+        ESP_LOGI("MBUS", "Checksum OK");
+    }else{
+        ESP_LOGE("MBUS", "Checksum failed");
+    }
     
-    mbus_packet->fraq = mbus_packet->control_information==0x00;
+    // mbus_packet->fraq = mbus_packet->control_information==0x00;
 
     if(mbus_packet->control_information==0x11){
         uart_flush_input(MBUS_UART);
     }
 
-    return mbus_packet->length+2+2+2;  //start+length+length+start+checksum+end
+    return mbus_packet->length+1+1+1+1+1+1;  //1Byte start+ 1Byte length+ 1Byte length+ 1Byte start+ 1Byte checksum+ 1Byte end
 
 }
 

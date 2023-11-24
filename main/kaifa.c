@@ -45,7 +45,7 @@ void parse_obis_codes(kaifa_data_t * kaifa, uint8_t * data, size_t data_len){
 
         kaifa->epoch = epoch_from_timestamp(year, month, day, hour, minute, second);
 
-        printf("\n\nTimestamp: %02d.%02d.%d %02d:%02d:%02d\n", day, month, year, hour, minute, second);
+        ESP_LOGI("KAIFA", "Timestamp: %02d.%02d.%d %02d:%02d:%02d", day, month, year, hour, minute, second);
     }
 
     uint8_t obis_meternumber[6] = {0x00, 0x00, 0x60, 0x01, 0x00, 0xff};
@@ -57,7 +57,7 @@ void parse_obis_codes(kaifa_data_t * kaifa, uint8_t * data, size_t data_len){
 
         kaifa->id = get_hash(meternumber, meternumber_length);
         
-        printf("Length: %d Meternumber: %s\n", meternumber_length, meternumber);
+        ESP_LOGI("KAIFA", "Length: %d Meternumber: %s", meternumber_length, meternumber);
     }
     uint8_t obis_devicename[6] = {0x00, 0x00, 0x2A, 0x00, 0x00, 0xff};
     start = find_in_mem(data, obis_devicename, data_len, obis_size)+obis_size;
@@ -66,14 +66,14 @@ void parse_obis_codes(kaifa_data_t * kaifa, uint8_t * data, size_t data_len){
         char devicename[devicename_length];
         memcpy(devicename, start+1, devicename_length);
 
-        printf("Length: %d Devicename: %s\n", devicename_length, devicename);
+        ESP_LOGI("KAIFA", "Length: %d Devicename: %s", devicename_length, devicename);
     }
     uint8_t obis_voltage_l1[6] = {0x01, 0x00, 0x20, 0x07, 0x00, 0xff};
     start = find_in_mem(data, obis_voltage_l1, data_len, obis_size)+obis_size+1;
     if(start!=NULL){
         uint16_t voltage_l1 = *(start)<< 8 | *(start+1);
         int8_t scale_factor = *(start+5);
-        printf("Voltage L1 %dV Scale: %d\n", voltage_l1, scale_factor);
+        ESP_LOGI("KAIFA", "Voltage L1 %dV Scale: %d", voltage_l1, scale_factor);
 
         kaifa->voltage_l1 = voltage_l1;
     }
@@ -82,7 +82,7 @@ void parse_obis_codes(kaifa_data_t * kaifa, uint8_t * data, size_t data_len){
     if(start!=NULL){
         uint16_t voltage_l2 = *(start)<< 8 | *(start+1);
         int8_t scale_factor = *(start+5);
-        printf("Voltage L2 %dV Scale: %d\n", voltage_l2, scale_factor);
+        ESP_LOGI("KAIFA", "Voltage L2 %dV Scale: %d", voltage_l2, scale_factor);
 
         kaifa->voltage_l2 = voltage_l2;
     }
@@ -91,7 +91,7 @@ void parse_obis_codes(kaifa_data_t * kaifa, uint8_t * data, size_t data_len){
     if(start!=NULL){
         uint16_t voltage_l3 = *(start)<< 8 | *(start+1);
         int8_t scale_factor = *(start+5);
-        printf("Voltage L3 %dV Scale: %d\n", voltage_l3, scale_factor);
+        ESP_LOGI("KAIFA", "Voltage L3 %dV Scale: %d", voltage_l3, scale_factor);
 
         kaifa->voltage_l3 = voltage_l3;
     }
@@ -101,7 +101,7 @@ void parse_obis_codes(kaifa_data_t * kaifa, uint8_t * data, size_t data_len){
         uint16_t current_l1_buf = *(start)<< 8 | *(start+1);
         int8_t scale_factor = *(start+5);
         float current_l1 = (float)current_l1_buf/(float)scale_factor;
-        printf("Current L1 %fA\n", current_l1);
+        ESP_LOGI("KAIFA", "Current L1 %fA", current_l1);
 
         kaifa->current_l1 = current_l1_buf;
     }
@@ -111,7 +111,7 @@ void parse_obis_codes(kaifa_data_t * kaifa, uint8_t * data, size_t data_len){
         uint16_t current_l2_buf = *(start)<< 8 | *(start+1);
         int8_t scale_factor = *(start+5);
         float current_l2 = (float)current_l2_buf/(float)scale_factor;
-        printf("Current L2 %fA\n", current_l2);
+        ESP_LOGI("KAIFA", "Current L2 %fA", current_l2);
 
         kaifa->current_l2 = current_l2_buf;
     }
@@ -121,7 +121,7 @@ void parse_obis_codes(kaifa_data_t * kaifa, uint8_t * data, size_t data_len){
         uint16_t current_l3_buf = *(start)<< 8 | *(start+1);
         int8_t scale_factor = *(start+5);
         float current_l3 = (float)current_l3_buf/(float)scale_factor;
-        printf("Current L3 %fA\n", current_l3);
+        ESP_LOGI("KAIFA", "Current L3 %fA", current_l3);
 
         kaifa->current_l3 = current_l3_buf;
     }
@@ -131,7 +131,7 @@ void parse_obis_codes(kaifa_data_t * kaifa, uint8_t * data, size_t data_len){
         uint16_t active_power_plus_buf = *(start)<< 24 | *(start+1)<<16 | *(start+2)<< 8 | *(start+3);
         int8_t scale_factor = *(start+7);
         float active_power_plus = (float)active_power_plus_buf/(float)scale_factor;
-        printf("Active Power Plus %fkW\n", active_power_plus);
+        ESP_LOGI("KAIFA", "Active Power Plus %fkW", active_power_plus);
 
         kaifa->active_power_plus = active_power_plus_buf;
     }
@@ -141,7 +141,7 @@ void parse_obis_codes(kaifa_data_t * kaifa, uint8_t * data, size_t data_len){
         uint16_t active_power_minus_buf = *(start)<< 24 | *(start+1)<<16 | *(start+2)<< 8 | *(start+3);
         int8_t scale_factor = *(start+7);
         float active_power_minus = (float)active_power_minus_buf/(float)scale_factor;
-        printf("Active Power Minus %fkW\n", active_power_minus);
+        ESP_LOGI("KAIFA", "Active Power Minus %fkW", active_power_minus);
 
         kaifa->active_power_plus = active_power_minus_buf;
     }
@@ -151,7 +151,7 @@ void parse_obis_codes(kaifa_data_t * kaifa, uint8_t * data, size_t data_len){
         uint16_t active_energy_plus_buf = *(start)<< 24 | *(start+1)<<16 | *(start+2)<< 8 | *(start+3);
         int8_t scale_factor = *(start+7);
         float active_energy_plus = (float)active_energy_plus_buf/(float)scale_factor;
-        printf("Active Energy Plus %fkWh\n", active_energy_plus);
+        ESP_LOGI("KAIFA", "Active Energy Plus %fkWh", active_energy_plus);
 
         kaifa->active_energy_plus = active_energy_plus_buf;
     }
@@ -161,7 +161,7 @@ void parse_obis_codes(kaifa_data_t * kaifa, uint8_t * data, size_t data_len){
         uint16_t active_energy_minus_buf = *(start)<< 24 | *(start+1)<<16 | *(start+2)<< 8 | *(start+3);
         int8_t scale_factor = *(start+7);
         float active_energy_minus = (float)active_energy_minus_buf/(float)scale_factor;
-        printf("Active Energy Minus %fkWh\n", active_energy_minus);
+        ESP_LOGI("KAIFA", "Active Energy Minus %fkWh", active_energy_minus);
 
         kaifa->active_energy_minus = active_energy_minus_buf;
     }
@@ -171,7 +171,7 @@ void parse_obis_codes(kaifa_data_t * kaifa, uint8_t * data, size_t data_len){
         uint16_t reactive_repower_plus_buf = *(start)<< 24 | *(start+1)<<16 | *(start+2)<< 8 | *(start+3);
         int8_t scale_factor = *(start+7);
         float reactive_repower_plus = (float)reactive_repower_plus_buf/(float)scale_factor;
-        printf("Reactive Power Plus %fkW\n", reactive_repower_plus);
+        ESP_LOGI("KAIFA", "Reactive Power Plus %fkW", reactive_repower_plus);
 
         kaifa->reactive_power_plus = reactive_repower_plus_buf;
     }
@@ -181,7 +181,7 @@ void parse_obis_codes(kaifa_data_t * kaifa, uint8_t * data, size_t data_len){
         uint16_t reactive_power_minus_buf = *(start)<< 24 | *(start+1)<<16 | *(start+2)<< 8 | *(start+3);
         int8_t scale_factor = *(start+7);
         float reactive_power_minus = (float)reactive_power_minus_buf/(float)scale_factor;
-        printf("Reactive Power Minus %fkW\n", reactive_power_minus);
+        ESP_LOGI("KAIFA", "Reactive Power Minus %fkW", reactive_power_minus);
 
         kaifa->reactive_power_minus = reactive_power_minus_buf;
     }

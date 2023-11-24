@@ -3,6 +3,7 @@
 
 #include <driver/uart.h>
 #include <string.h>
+#include <esp_log.h>
 
 #ifndef MBUS_UART
 #define MBUS_UART UART_NUM_1

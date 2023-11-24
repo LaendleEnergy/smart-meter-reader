@@ -6,19 +6,9 @@ char modem_send_buffer[MODEM_SEND_BUFFER_SIZE] = {0};
 
 static server_info_t server_info = {0};
 
-// static esp_err_t my_post_attach_start(esp_netif_t * esp_netif, void * args)
-// {
-//     my_netif_driver_t *driver = args;
-//     const esp_netif_driver_ifconfig_t driver_ifconfig = {
-//             .driver_free_rx_buffer = my_free_rx_buf,
-//             .transmit = my_transmit,
-//             .handle = driver->driver_impl
-//     };
-//     driver->base.netif = esp_netif;
-//     ESP_ERROR_CHECK(esp_netif_set_driver_config(esp_netif, &driver_ifconfig));
-//     my_driver_start(driver->driver_impl);
-//     return ESP_OK;
-// }
+uint8_t rx_buffer[RX_BUFFER_SIZE] = {0};
+
+static void (*data_received_callback)(void * data, size_t length);
 
 void sim7020e_init(){
 
@@ -57,21 +47,24 @@ void sim7020e_init(){
     //Disable cmd echo
     sim7020e_send_command_and_wait_for_response("ate0", TIMEOUT_1S, 1, 1, "OK");
 
-    if(sim7020e_get_connection_status()<4){
-        int8_t state = sim7020e_get_network_registration_status();
-        if(state==0){
-            ESP_LOGI("MODEM ", "Not connected to Network");
-            sim7020e_apn_manual_config();
-            ESP_LOGI("MODEM ", "Network connection established");
-        }else if(state==1){
-            while(sim7020e_get_network_registration_status()==1);
-            ESP_LOGI("MODEM ", "Network connection established");
-        }
+    int8_t state = sim7020e_get_network_registration_status();
+    if(state<=0){
+        ESP_LOGI("MODEM ", "Not connected to Network");
+        sim7020e_apn_manual_config();
+        ESP_LOGI("MODEM ", "Network connection established");
+    }else if(state==1){
+        while(sim7020e_get_network_registration_status()==1);
+        ESP_LOGI("MODEM ", "Network connection established");
     }
+    
+}
+
+void sim7020e_set_data_received_callback(void (*callback)(void * data, size_t len)){
+    data_received_callback = callback;
 }
 
 void sim7020e_test_connection(){
-    while(sim7020e_send_command_and_wait_for_response("AT", TIMEOUT_1S, 10, 1, "OK")!=0){
+    while(sim7020e_send_command_and_wait_for_response("AT", TIMEOUT_1S, 3, 1, "OK")==-2){
         sim7020e_hard_reset();
     }
 }
@@ -87,24 +80,33 @@ void sim7020e_hard_reset(){
 }
 
 int8_t sim7020e_get_network_registration_status(){
-    int8_t state =  sim7020e_send_command_and_wait_for_response("at+cgreg?", TIMEOUT_1S, 1, 24, 
-    "+CGREG: 0,0", "+CGREG: 0,3", "+CGREG: 0,4", "+CGREG: 0,6", "+CGREG: 0,7",
-    "+CGREG: 1,0", "+CGREG: 1,3", "+CGREG: 1,4", "+CGREG: 1,6", "+CGREG: 1,7",
-    "+CGREG: 2,0", "+CGREG: 2,3", "+CGREG: 2,4", "+CGREG: 2,6", "+CGREG: 2,7",
-    "+CGREG: 0,2", "+CGREG: 2,2", "+CGREG: 1,2", 
-    "+CGREG: 0,1", "+CGREG: 0,5", "+CGREG: 1,1", "+CGREG: 1,5", "+CGREG: 2,1", "+CGREG: 2,5");
+    // int8_t state =  sim7020e_send_command_and_wait_for_response("at+cgreg?", TIMEOUT_1S, 1, 24, 
+    // "+CGREG: 0,0", "+CGREG: 0,3", "+CGREG: 0,4", "+CGREG: 0,6", "+CGREG: 0,7",
+    // "+CGREG: 1,0", "+CGREG: 1,3", "+CGREG: 1,4", "+CGREG: 1,6", "+CGREG: 1,7",
+    // "+CGREG: 2,0", "+CGREG: 2,3", "+CGREG: 2,4", "+CGREG: 2,6", "+CGREG: 2,7",
+    // "+CGREG: 0,2", "+CGREG: 2,2", "+CGREG: 1,2", 
+    // "+CGREG: 0,1", "+CGREG: 0,5", "+CGREG: 1,1", "+CGREG: 1,5", "+CGREG: 2,1", "+CGREG: 2,5");
 
-    if(state<15){
+    sim7020e_send_command_and_wait_for_response("at+cgreg?", TIMEOUT_1S, 1, 1, "OK");
+    char * mode = strstr(modem_receive_buffer, "+CGREG: ")+strlen("+CGREG: ");
+    if(mode==NULL) return -1;
+
+    char * state_code = mode+2;
+
+    if(*state_code=='0' || *state_code=='3' || *state_code=='4' || *state_code=='6' || *state_code=='7'){
         return 0;
-    }else if(state >= 15 && state < 18){
+    }else if(*state_code=='2'){
         return 1;
-    }else if(state >=18 && state < 24){
+    }else if(*state_code=='5'){
         return 2;
+    }else{
+        return -1;
     }
-    return -1;
+
 }
 
 bool sim7020e_apn_manual_config(){
+
     //disable RF
     sim7020e_send_command_and_wait_for_response("at+cfun=0", TIMEOUT_5S, 1, 1, "OK");
     
@@ -121,10 +123,11 @@ bool sim7020e_apn_manual_config(){
         if((esp_timer_get_time())-start_time>TIMEOUT_10S*10){
             return false;
         }
+        vTaskDelay(1000/portTICK_PERIOD_MS);
     }while(sim7020e_get_network_registration_status()<2);
 
-    sim7020e_send_command_and_wait_for_response("at+cgcontrdp=1", TIMEOUT_10S, 1, 1, "+CGCONTRDP:");
-    sim7020e_send_command_and_wait_for_response("", TIMEOUT_10S, 1, 1, "OK");
+    sim7020e_send_command_and_wait_for_response("at+cgcontrdp=1", TIMEOUT_10S, 3, 1, "+CGCONTRDP:");
+    // sim7020e_send_command_and_wait_for_response("", TIMEOUT_10S*5, 1, 1, "OK");
 
     sim7020e_send_command_and_wait_for_response("at+cfgri=1", TIMEOUT_5S, 1, 1, "OK");
 
@@ -149,16 +152,39 @@ void sim7020e_connect_tcp(char * server, char * port){
 
     if(sim7020e_send_command_and_wait_for_response("", TIMEOUT_10S*6, 1, 1, "CONNECT OK")==0){
         sim7020e_send_command_and_wait_for_response("at+cipchan", TIMEOUT_1S, 1, 1, "CONNECT");
-
-        sim7020e_handle_tcp_connection();
     }
 
 }
 
-void sim7020e_handle_tcp_connection(){
+bool sim7020e_connect_udp(char * server, char * port){
+
+    strncpy(server_info.address, server, sizeof(server_info.address));
+    strncpy(server_info.port, port, sizeof(server_info.port));
+
+    sim7020e_send_command_and_wait_for_response("at+cipmux=0", TIMEOUT_1S, 3, 1, "OK");
+    sim7020e_send_command_and_wait_for_response("at+cipmode=1", TIMEOUT_1S, 3, 1, "OK");
+    sim7020e_send_command_and_wait_for_response("at+cipclose=0", TIMEOUT_1S, 1, 1, "CLOSE OK");
+    if(sim7020e_get_connection_status()>4){
+        if(sim7020e_send_command_and_wait_for_response("at+cipchan", TIMEOUT_1S, 1, 1, "CONNECT")==0){
+            return true;
+        }
+    }else{
+
+        memset(modem_send_buffer, 0, MODEM_SEND_BUFFER_SIZE);
+        sprintf(modem_send_buffer, "at+cipstart=\"UDP\",\"%s\",\"%s\"", server_info.address, server_info.port);
+        if(sim7020e_send_command_and_wait_for_response(modem_send_buffer, TIMEOUT_10S, 3, 8, "CLOSED", "CLOSING", "REMOTE CLOSING", "INITIAL", "CONNECTING", "CONNECTED", "ALREADY CONNECT", "CONNECT OK")>4){
+            for(uint8_t i = 0; i < 3; i++){
+                if(sim7020e_send_command_and_wait_for_response("at+cipchan", TIMEOUT_1S, 1, 1, "CONNECT")==0){
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
+}
+
+void sim7020e_handle_connection(){
     while(true){
-        uart_write_bytes(MODEM_UART,"Hallo das ist ein test", strlen("Hallo das ist ein test"));
-        ESP_LOGI("MODEM TCP SEND", "Hallo das ist ein test");
         size_t buffered = 0;
         uart_get_buffered_data_len(MODEM_UART, &buffered);
         memset(modem_receive_buffer, 0, MODEM_BUFFER_SIZE);
@@ -167,16 +193,19 @@ void sim7020e_handle_tcp_connection(){
             ESP_LOGI("MODEM RCV", "%s", modem_receive_buffer);
             if(strstr(modem_receive_buffer, "CLOSED")!=NULL){
                 sim7020e_connect_tcp(server_info.address, server_info.port);
+            }else{
+                if(data_received_callback!=NULL){
+                    data_received_callback(modem_receive_buffer, len);
+                }
             }
         }
         vTaskDelay(5000/portTICK_PERIOD_MS);
     }
 }
 
-void sim7020e_send_raw_data(uint8_t * data, size_t length){
-    uart_write_bytes(MODEM_UART, data, length);
+void sim7020e_send_raw_data(void * data, size_t length){
+    uart_write_bytes(MODEM_UART, (uint8_t*)data, length);
 }
-
 
 int8_t sim7020e_send_command_and_wait_for_response(char * cmd, uint64_t timeout_us, uint8_t repeats, size_t response_count, ...){
 
@@ -212,6 +241,11 @@ int8_t sim7020e_send_command_and_wait_for_response(char * cmd, uint64_t timeout_
                     char current_resp[50] = {0};
                     strncpy(current_resp, va_arg(list, const char *), 50);
                     if(strstr(modem_receive_buffer, current_resp)!=NULL){
+                        size_t len = 0;
+                        while(ptr!=modem_receive_buffer+MODEM_BUFFER_SIZE && len>0){
+                            ptr+=uart_read_bytes(MODEM_UART, ptr, 1, 1);
+                        }
+
                         ESP_LOGI("MODEM RCD", "%s", modem_receive_buffer);
                         return i;
                     }

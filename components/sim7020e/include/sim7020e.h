@@ -10,7 +10,8 @@
 #include <driver/gpio.h>
 #include <esp_timer.h>
 #include <esp_log.h>
-// #include <esp_netif.h>
+
+#define RX_BUFFER_SIZE 1520
 
 #ifndef MODEM_BUFFER_SIZE
 #define MODEM_BUFFER_SIZE 2048
@@ -52,12 +53,13 @@
 #define MODEM_APN "iot.1nce.net"
 #endif
 
-#define SERVER "45.145.224.10"
-#define PORT "1883"
 
 #define TIMEOUT_1S 1000000
 #define TIMEOUT_5S 5000000
 #define TIMEOUT_10S 10000000
+
+#define MY_DRV_EVENT_START 0x00
+#define MY_DRV_EVENT_STOP 0x01
 
 enum {
     TIMEOUT = -2,
@@ -68,11 +70,6 @@ typedef struct {
     char address[64];
     char port[8];
 }server_info_t;
-
-// typedef struct my_netif_driver_s {
-//     esp_netif_driver_base_t base;           /*!< base structure reserved as esp-netif driver */
-//     driver_impl * h;                        /*!< handle of driver implementation */
-// } my_netif_driver_t;
 
 
 
@@ -86,7 +83,13 @@ int8_t sim7020e_send_command_and_wait_for_response(char * cmd, uint64_t timeout_
 void sim7020e_connect_tcp();
 int8_t sim7020e_get_connection_status();
 int8_t sim7020e_get_network_registration_status();
-void sim7020e_handle_tcp_connection();
+void sim7020e_handle_connection();
+
+bool sim7020e_connect_udp();
+
+
+void sim7020e_set_data_received_callback(void (*callback)(void * data, size_t len));
+void sim7020e_send_raw_data(void * data, size_t length);
 #endif
 
 

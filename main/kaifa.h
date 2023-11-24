@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <esp_log.h>
 
 typedef struct{
     uint32_t epoch;
