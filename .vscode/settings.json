@@ -19,6 +19,8 @@
         "mbus_minimal.h": "c",
         "easy_mqtt_client.h": "c",
         "freertos.h": "c",
-        "my_mqtt_client.h": "c"
+        "my_mqtt_client.h": "c",
+        "string_view": "c",
+        "regex": "c"
     }
 }

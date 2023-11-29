@@ -6,6 +6,8 @@
 #include <esp_mac.h>
 #include <esp_random.h>
 #include <mbedtls/sha256.h>
+#include <math.h>
+#include <freertos/queue.h>
 
 // MBUS Defines
 #define MBUS_UART UART_NUM_1
@@ -29,8 +31,13 @@
 #define MODEM_SEND_BUFFER_SIZE 512
 
 #define MODEM_APN "iot.1nce.net"
-#define SERVER "45.145.224.10"
-#define PORT "1883"
+#define SERVER "85.215.60.151"//"45.145.224.10"
+#define PORT "4433"//"1883"
+
+#define AUTH_SUCCESS 0x22
+#define AUTH_FAILED 0x11
+#define DATA_SUCCESS 0x44
+#define DATA_FAILED 0x33
 
 #include "mbus_minimal.h"
 #include "dlms.h"
@@ -49,7 +56,9 @@ uint8_t udp_key[16] = {0xb2, 0x0d, 0x7a, 0x8c, 0x55, 0x1e, 0x3f, 0x9a,0x64, 0x0b
 
 mbus_packet_t mbus_list[MAX_FRAME_COUNT];
 dlms_data_t dlms;
-kaifa_data_t kaifa;
+kaifa_data_t kaifa, kaifa_old;
+
+// QueueHandle_t data_queue;
 
 void to_hex_string(char * hex_buffer, uint16_t hex_buffer_size, uint8_t * buffer, uint16_t buffer_size){
     memset(hex_buffer, 0, hex_buffer_size);
@@ -131,12 +140,71 @@ uint32_t to_epoch(uint16_t year, uint8_t month, uint8_t day, uint8_t hour, uint8
 
 
 
+bool kaifa_data_differnce(kaifa_data_t * kaifa, kaifa_data_t * kaifa_old, float offset){
+    return abs(kaifa->voltage_l1-kaifa_old->voltage_l1)>kaifa->voltage_l1*offset || 
+           abs(kaifa->voltage_l2-kaifa_old->voltage_l2)>kaifa->voltage_l2*offset ||
+           abs(kaifa->voltage_l3-kaifa_old->voltage_l3)>kaifa->voltage_l3*offset || 
+           abs(kaifa->current_l1-kaifa_old->current_l1)>kaifa->current_l1*offset ||
+           abs(kaifa->current_l2-kaifa_old->current_l2)>kaifa->current_l2*offset ||
+           abs(kaifa->current_l3-kaifa_old->current_l3)>kaifa->current_l3*offset ||
+           abs(kaifa->active_power_plus-kaifa_old->active_power_plus)>kaifa->active_power_plus*offset ||
+           abs(kaifa->active_power_minus-kaifa_old->active_power_minus)>kaifa->active_power_minus*offset ||
+           abs(kaifa->reactive_power_plus-kaifa_old->reactive_power_plus)>kaifa->reactive_power_plus*offset ||
+           abs(kaifa->reactive_power_minus-kaifa_old->reactive_power_minus)>kaifa->reactive_power_minus*offset ||
+           abs(kaifa->active_energy_plus-kaifa_old->active_energy_plus)>kaifa->active_energy_plus*offset ||
+           abs(kaifa->active_energy_minus-kaifa_old->active_energy_minus)>kaifa->active_energy_minus*offset;
+}
 
+
+void usdp_format_data(uint8_t * frame_buffer, size_t buf_size, kaifa_data_t * kaifa){
+    if(buf_size<32) return;
+
+    memset(frame_buffer, 0, buf_size);
+    frame_buffer[0] = 0x0F;
+    frame_buffer[1] = 0x00;
+
+    frame_buffer[2] = kaifa->epoch >> 24 & 0xFF;
+    frame_buffer[3] = kaifa->epoch >> 16 & 0xFF;
+    frame_buffer[4] = kaifa->epoch >> 8 & 0xFF;
+    frame_buffer[5] = kaifa->epoch & 0xFF;
+
+    frame_buffer[6] = kaifa->scale_voltage;
+    frame_buffer[7] = kaifa->voltage_l1 >> 8 & 0xFF;
+    frame_buffer[8] = kaifa->voltage_l1 & 0xFF;
+    frame_buffer[9] = kaifa->voltage_l2 >> 8 & 0xFF;
+    frame_buffer[10] = kaifa->voltage_l2 & 0xFF;
+    frame_buffer[11] = kaifa->voltage_l3 >> 8 & 0xFF;
+    frame_buffer[12] = kaifa->voltage_l3 & 0xFF;
+
+    frame_buffer[13] = kaifa->scale_current;
+    frame_buffer[14] = kaifa->current_l1 >> 8 & 0xFF;
+    frame_buffer[15] = kaifa->current_l1 & 0xFF;
+    frame_buffer[16] = kaifa->current_l2 >> 8 & 0xFF;
+    frame_buffer[17] = kaifa->current_l2 & 0xFF;
+    frame_buffer[18] = kaifa->current_l3 >> 8 & 0xFF;
+    frame_buffer[19] = kaifa->current_l3 & 0xFF;
+
+    frame_buffer[20] = kaifa->scale_power;
+    frame_buffer[21] = kaifa->active_power_plus >> 8 & 0xFF;
+    frame_buffer[22] = kaifa->active_power_plus & 0xFF;
+    frame_buffer[23] = kaifa->active_power_minus >> 8 & 0xFF;
+    frame_buffer[24] = kaifa->active_power_minus & 0xFF;
+    frame_buffer[25] = kaifa->reactive_power_plus >> 8 & 0xFF;
+    frame_buffer[26] = kaifa->reactive_power_plus & 0xFF;
+    frame_buffer[27] = kaifa->reactive_power_minus >> 8 & 0xFF;
+    frame_buffer[28] = kaifa->reactive_power_minus & 0xFF;
+
+    frame_buffer[29] = kaifa->scale_energy;
+    frame_buffer[30] = kaifa->active_energy_plus >> 8 & 0xFF;
+    frame_buffer[31] = kaifa->active_energy_minus & 0xFF;
+
+
+}
 
 
 void mbus_thread(void * param){
     mbus_init();
-
+    memset(&kaifa_old, 0, sizeof(kaifa_data_t));
     for(;;){
         size_t mbus_count = mbus_receive_multiple(mbus_list, MAX_FRAME_COUNT);
 
@@ -147,6 +215,15 @@ void mbus_thread(void * param){
 
         memset(&kaifa, 0, sizeof(kaifa_data_t));
         parse_obis_codes(&kaifa, plaintext_data, plaintext_size);
+
+        if(kaifa_data_differnce(&kaifa, &kaifa_old, 0.05)){
+            memcpy(&kaifa_old, &kaifa, sizeof(kaifa_data_t));
+
+            
+        }
+
+
+        
     }
 }
 
@@ -158,38 +235,51 @@ void mbus_thread(void * param){
 bool autheticated = false;
 uint32_t frame_counter = 0;
 
+typedef enum state {
+    UNAUTHORIZED = 0x00,
+    AUTH_STARTED = 0x01,
+    AUTHORIZED = 0x02
+}client_state_e;
+
+client_state_e client_state = UNAUTHORIZED;
 
 
+void compute_challenge_response(uint8_t * response, uint8_t * challenge, uint8_t * key){
+    mbedtls_sha256_context sha256;
+    mbedtls_sha256_init(&sha256);
+    mbedtls_sha256_starts(&sha256, 0);
+    mbedtls_sha256_update(&sha256, (uint8_t*)challenge, 16);
+    mbedtls_sha256_update(&sha256, key, 16);
 
-void udp_data_received(void * data, size_t len){
- 
-    ESP_LOGI("UDP", "len: %d, data: %ld", len, *((uint32_t*)data));
-    if(!autheticated){
-        if(len==16){ //
-        
-            mbedtls_sha256_context sha256;
-            mbedtls_sha256_init(&sha256);
-            mbedtls_sha256_starts(&sha256, 0);
-            mbedtls_sha256_update(&sha256, (uint8_t*)data, len);
-            mbedtls_sha256_update(&sha256, udp_key, sizeof(udp_key));
-
-            uint8_t response[32];
-            mbedtls_sha256_finish(&sha256, response);
-
-            ESP_LOG_BUFFER_HEX("CHALLANGE", response, 32);
-
-            sim7020e_send_raw_data(response, 32);
-        }else if(len==2){
-            autheticated=true;
-        }
-    }else{
-        sim7020e_send_raw_data(data, len);
-    }
-    
+    mbedtls_sha256_finish(&sha256, response);
 }
 
-int8_t connect_request(){
-    return 0xFF;
+
+
+bool usdp_authenticate(uint8_t * mac){
+    uint8_t auth_frame[7] = {0xFF, mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]};
+    sim7020e_send_raw_data(auth_frame, 7);
+    ESP_LOGI("USDP","Sending Authframe");
+
+    while(network_has_data()<16){vTaskDelay(100/portTICK_PERIOD_MS);}
+
+    uint8_t challenge[16] = {0};
+    network_read_data(challenge, 16);
+    ESP_LOGI("USDP","Challenge received");
+    uint8_t response[33] = {0};
+    response[0] = 0xFF;
+    compute_challenge_response(response+1, challenge, udp_key);
+    ESP_LOG_BUFFER_HEX("USDP", response, 33);
+    sim7020e_send_raw_data(response, 33);
+
+    while(network_has_data()<1){vTaskDelay(100/portTICK_PERIOD_MS);}
+    
+    uint8_t server_response;
+    network_read_data(&server_response, 1);
+    ESP_LOG_BUFFER_HEX("USDP", &server_response, 1);
+    
+    return server_response==AUTH_SUCCESS;
+    
 }
 
 void modem_thread(void * param){
@@ -199,30 +289,42 @@ void modem_thread(void * param){
     char buffer[13] = {0};
     sprintf(buffer, "%02X%02X%02X%02X%02X%02X", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
     
-    sim7020e_set_data_received_callback(udp_data_received);
+    // sim7020e_set_data_received_callback(udp_data_received);
     sim7020e_init();
 
     if(sim7020e_connect_udp(SERVER, PORT)){
-        uint8_t start = 0xFF;
-        sim7020e_send_raw_data(&start, 1);
         sim7020e_handle_connection();
+        while(!usdp_authenticate(mac)){
+            ESP_LOGE("USDP","Authentication failed");
+            vTaskDelay(1000/portTICK_PERIOD_MS);
+        }
+        ESP_LOGI("USDP","Authenticated");
+        for(;;){
+            kaifa_data_t data = {0};
+            // if(xQueuePeek(data_queue, &data, 100/portTICK_PERIOD_MS)==pdTRUE){
+            //     uint8_t frame_buffer[38] = {0};
+            //     usdp_format_data(frame_buffer, 36, &data);
+            //     sim7020e_send_raw_data(frame_buffer, 36);
+
+            //     while(network_has_data()<=0){vTaskDelay(100/portTICK_PERIOD_MS);}
+            //     uint8_t server_response;
+            //     network_read_data(&server_response, 1);
+            // }
+        }
     }
     
-    
-    // mqtt_connect();
-    
-    // mqtt_publish("test", 4);
 }
 
 void app_main(void){
 
+    // data_queue = xQueueCreate(100, sizeof(kaifa_data_t));
 
     xTaskCreate(mbus_thread, "mbus thread", 2048, NULL, 0, NULL);
-    xTaskCreate(modem_thread, "modem thread", 2048, NULL, 0, NULL);
+    xTaskCreate(modem_thread, "modem thread", 4096, NULL, 0, NULL);
 
 
-    for(;;){
-        ESP_LOGI("Main Loop", "Running");
-        vTaskDelay(1000);
-    }
+    // for(;;){
+    //     ESP_LOGI("Main Loop", "Running");
+    //     vTaskDelay(1000);
+    // }
 }

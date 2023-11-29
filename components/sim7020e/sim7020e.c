@@ -6,9 +6,12 @@ char modem_send_buffer[MODEM_SEND_BUFFER_SIZE] = {0};
 
 static server_info_t server_info = {0};
 
-uint8_t rx_buffer[RX_BUFFER_SIZE] = {0};
+QueueHandle_t sendQueue;
+data_t send_data_in, send_data_out;
 
-static void (*data_received_callback)(void * data, size_t length);
+static network_data_t network_data;
+
+// static void (*data_received_callback)(void * data, size_t length);
 
 void sim7020e_init(){
 
@@ -39,6 +42,13 @@ void sim7020e_init(){
     memset(modem_receive_buffer, 0, MODEM_BUFFER_SIZE);
     memset(modem_send_buffer, 0, MODEM_SEND_BUFFER_SIZE);
 
+    memset(network_data.data, 0, NETWORK_DATA_SIZE);
+    network_data.available = 0;
+    network_data.start = network_data.data;
+    network_data.end = network_data.data+NETWORK_DATA_SIZE;
+    network_data.pos = network_data.data;
+
+    sendQueue = xQueueCreate(1, sizeof(data_t));
 
     sim7020e_test_connection();
 
@@ -59,9 +69,9 @@ void sim7020e_init(){
     
 }
 
-void sim7020e_set_data_received_callback(void (*callback)(void * data, size_t len)){
-    data_received_callback = callback;
-}
+// void sim7020e_set_data_received_callback(void (*callback)(void * data, size_t len)){
+//     data_received_callback = callback;
+// }
 
 void sim7020e_test_connection(){
     while(sim7020e_send_command_and_wait_for_response("AT", TIMEOUT_1S, 3, 1, "OK")==-2){
@@ -174,7 +184,7 @@ bool sim7020e_connect_udp(char * server, char * port){
         sprintf(modem_send_buffer, "at+cipstart=\"UDP\",\"%s\",\"%s\"", server_info.address, server_info.port);
         if(sim7020e_send_command_and_wait_for_response(modem_send_buffer, TIMEOUT_10S, 3, 8, "CLOSED", "CLOSING", "REMOTE CLOSING", "INITIAL", "CONNECTING", "CONNECTED", "ALREADY CONNECT", "CONNECT OK")>4){
             for(uint8_t i = 0; i < 3; i++){
-                if(sim7020e_send_command_and_wait_for_response("at+cipchan", TIMEOUT_1S, 1, 1, "CONNECT")==0){
+                if(sim7020e_send_command_and_wait_for_response("at+cipchan", TIMEOUT_1S, 1, 1, "CONNECT\r\n")==0){
                     return true;
                 }
             }
@@ -183,28 +193,77 @@ bool sim7020e_connect_udp(char * server, char * port){
     return false;
 }
 
-void sim7020e_handle_connection(){
-    while(true){
-        size_t buffered = 0;
-        uart_get_buffered_data_len(MODEM_UART, &buffered);
-        memset(modem_receive_buffer, 0, MODEM_BUFFER_SIZE);
-        size_t len = uart_read_bytes(MODEM_UART, modem_receive_buffer, buffered < MODEM_BUFFER_SIZE ? buffered : MODEM_BUFFER_SIZE, 1);
-        if(len>0){
-            ESP_LOGI("MODEM RCV", "%s", modem_receive_buffer);
-            if(strstr(modem_receive_buffer, "CLOSED")!=NULL){
-                sim7020e_connect_tcp(server_info.address, server_info.port);
-            }else{
-                if(data_received_callback!=NULL){
-                    data_received_callback(modem_receive_buffer, len);
-                }
-            }
-        }
-        vTaskDelay(5000/portTICK_PERIOD_MS);
+void network_add_data(uint8_t * data, size_t len){
+    if(len<=NETWORK_DATA_SIZE-network_data.available){
+        memcpy(network_data.start+network_data.available, data, len);
+        network_data.available = network_data.available + len;
+    }else{
+        uint16_t offset = (len+network_data.available-NETWORK_DATA_SIZE);
+        uint8_t * new_start_pos = network_data.start+offset;
+        memmove(network_data.start, new_start_pos, network_data.available-offset);
+        memcpy(network_data.start+network_data.available-offset, data, len);
+        network_data.available = NETWORK_DATA_SIZE;
     }
 }
 
+void network_read_data(uint8_t * buffer, uint16_t len){
+    if(len<=network_data.available){
+        if(len>NETWORK_DATA_SIZE){
+            len=NETWORK_DATA_SIZE;
+        }
+        memcpy(buffer, network_data.start, len);
+        memmove(network_data.start, network_data.start+len, network_data.available-len);
+    }
+}
+
+uint16_t network_has_data(){
+    return network_data.available;
+}
+
+void handle_connection(){
+    while(true){
+        memset(&send_data_out, 0, sizeof(data_t));
+        if(xQueueReceive(sendQueue, &send_data_out, 100/portTICK_PERIOD_MS)==pdTRUE){
+            uart_write_bytes(MODEM_UART, send_data_out.data, send_data_out.length);
+        }
+        
+
+        size_t buffered = 0;
+        uart_get_buffered_data_len(MODEM_UART, &buffered);
+        if(buffered>0){
+            memset(modem_receive_buffer, 0, MODEM_BUFFER_SIZE);
+            size_t len = uart_read_bytes(MODEM_UART, modem_receive_buffer, buffered < MODEM_BUFFER_SIZE ? buffered : MODEM_BUFFER_SIZE, 100/portTICK_PERIOD_MS);
+
+            if(len>0){
+                
+                if(strstr(modem_receive_buffer, "CLOSED")!=NULL){
+                    ESP_LOGI("MODEM RCV", "%s", modem_receive_buffer);
+                    sim7020e_connect_tcp(server_info.address, server_info.port);
+                }else{
+                    ESP_LOG_BUFFER_HEX("MODEM RCV", modem_receive_buffer, len);
+                    network_add_data((uint8_t*)modem_receive_buffer, len);
+                }
+            }
+        }
+        
+    }
+}
+
+void sim7020e_handle_connection(){
+    
+    xTaskCreate(handle_connection, "modem_connection_handle", 1024, NULL, configMAX_PRIORITIES - 1, NULL);
+    
+}
+
+
+
 void sim7020e_send_raw_data(void * data, size_t length){
-    uart_write_bytes(MODEM_UART, (uint8_t*)data, length);
+    
+    memset(&send_data_in, 0, sizeof(data_t));
+    memcpy(send_data_in.data, data, length);
+    send_data_in.length = length;
+
+    xQueueSend(sendQueue, &send_data_in, 100/portTICK_PERIOD_MS);
 }
 
 int8_t sim7020e_send_command_and_wait_for_response(char * cmd, uint64_t timeout_us, uint8_t repeats, size_t response_count, ...){

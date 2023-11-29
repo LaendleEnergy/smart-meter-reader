@@ -61,6 +61,8 @@
 #define MY_DRV_EVENT_START 0x00
 #define MY_DRV_EVENT_STOP 0x01
 
+#define NETWORK_DATA_SIZE 1024
+
 enum {
     TIMEOUT = -2,
     ERROR = -1
@@ -71,7 +73,18 @@ typedef struct {
     char port[8];
 }server_info_t;
 
+typedef struct {
+    uint8_t data[NETWORK_DATA_SIZE];
+    uint16_t available;
+    uint8_t * start;
+    uint8_t * end;
+    uint8_t * pos;
+}network_data_t;
 
+typedef struct{
+    uint8_t data[1024];
+    size_t length;
+}data_t;
 
 void sim7020e_init();
 
@@ -90,6 +103,12 @@ bool sim7020e_connect_udp();
 
 void sim7020e_set_data_received_callback(void (*callback)(void * data, size_t len));
 void sim7020e_send_raw_data(void * data, size_t length);
+
+
+void network_add_data(uint8_t * data, size_t len);
+void network_read_data(uint8_t * buffer, uint16_t len);
+uint16_t network_has_data();
+
 #endif
 
 
