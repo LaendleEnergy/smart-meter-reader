@@ -73,18 +73,23 @@ typedef struct {
     char port[8];
 }server_info_t;
 
-typedef struct {
-    uint8_t data[NETWORK_DATA_SIZE];
-    uint16_t available;
-    uint8_t * start;
-    uint8_t * end;
-    uint8_t * pos;
-}network_data_t;
+// typedef struct {
+//     uint8_t data[NETWORK_DATA_SIZE];
+//     uint16_t available;
+//     uint8_t * start;
+//     uint8_t * end;
+//     uint8_t * pos;
+// }network_data_t;
 
 typedef struct{
-    uint8_t data[1024];
+    uint8_t data[NETWORK_DATA_SIZE];
     size_t length;
 }data_t;
+
+enum {
+    CLIENT_DISCONNECTED = 0,
+    CLIENT_CONNECTED = 1
+};
 
 void sim7020e_init();
 
@@ -98,17 +103,16 @@ int8_t sim7020e_get_connection_status();
 int8_t sim7020e_get_network_registration_status();
 void sim7020e_handle_connection();
 
+bool sim7020e_is_connected();
 bool sim7020e_connect_udp();
 
 
 void sim7020e_set_data_received_callback(void (*callback)(void * data, size_t len));
 void sim7020e_send_raw_data(void * data, size_t length);
 
+void network_send_data(uint8_t * data, size_t length);
 
-void network_add_data(uint8_t * data, size_t len);
-void network_read_data(uint8_t * buffer, uint16_t len);
-uint16_t network_has_data();
+size_t network_read_data_blocking(uint8_t * data, size_t length);
+int32_t network_read_data_blocking_with_timeout(uint8_t * data, size_t length, uint32_t timeout);
 
 #endif
-
-

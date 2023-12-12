@@ -6,6 +6,7 @@
 #include <esp_mac.h>
 #include <esp_random.h>
 #include <mbedtls/sha256.h>
+// #include "mbedtls/md.h"
 #include <math.h>
 #include <freertos/queue.h>
 
@@ -19,6 +20,7 @@
 #define KEY_SIZE 16
 #define START_VECTOR_SIZE 12
 #define PLAINTEXT_SIZE 512
+#define ENCRYPTED_SIZE 64
 
 //Modem Defines
 #define MODEM_UART UART_NUM_0
@@ -49,6 +51,7 @@
 
 
 uint8_t plaintext_data[PLAINTEXT_SIZE] = {0};
+uint8_t encrypted_data[PLAINTEXT_SIZE] = {0};
 
 uint8_t key[16] = {0x32, 0x69, 0x31, 0x63, 0x79, 0x79, 0x45, 0x6C, 0x59, 0x37, 0x34, 0x44, 0x73, 0x6D, 0x33, 0x75};
 
@@ -58,7 +61,10 @@ mbus_packet_t mbus_list[MAX_FRAME_COUNT];
 dlms_data_t dlms;
 kaifa_data_t kaifa, kaifa_old;
 
-// QueueHandle_t data_queue;
+QueueHandle_t data_queue;
+
+uint8_t usdp_state = 0;
+
 
 void to_hex_string(char * hex_buffer, uint16_t hex_buffer_size, uint8_t * buffer, uint16_t buffer_size){
     memset(hex_buffer, 0, hex_buffer_size);
@@ -70,136 +76,7 @@ void to_hex_string(char * hex_buffer, uint16_t hex_buffer_size, uint8_t * buffer
 
 
 
-uint32_t to_epoch(uint16_t year, uint8_t month, uint8_t day, uint8_t hour, uint8_t minute, uint8_t second){
-    uint32_t epoch = 0;
 
-
-    return epoch;
-}
-
-
-
-
-//                 *** KUNDENSCHNITTSTELLE ***
-
-// OBIS Code       Bezeichnung                      Wert
-// 09.11.2023 08:45:40
-// 0.0.96.1.0.255  Zaehlernummer:                   1KFM0200204032
-// 0.0.42.0.0.255  COSEM printical device name:     KFM1200200204032
-// 1.0.32.7.0.255  Spannung L1 (V):                 226.7
-// 1.0.52.7.0.255  Spannung L2 (V):                 227.6
-// 1.0.72.7.0.255  Spannung L3 (V):                 227.2
-// 1.0.31.7.0.255  Strom L1 (A):                    0.0
-// 1.0.51.7.0.255  Strom L2 (A):                    0.0
-// 1.0.71.7.0.255  Strom L3 (A):                    0.0
-// 1.0.1.7.0.255   Wirkleistung Bezug [kW]:         0.0
-// 1.0.2.7.0.255   Wirkleistung Lieferung [kW]:     0.0
-// 1.0.1.8.0.255   Wirkenergie Bezug [kWh]:         0.022
-// 1.0.2.8.0.255   Wirkenergie Lieferung [kWh]:     0.0
-// 1.0.3.8.0.255   Blindleistung Bezug [kW]:        0.007
-// 1.0.4.8.0.255   Blindleistung Lieferung [kW]:    0.0                             
-
-
-
-//Datatype=0x16 uint8, 0x12 uint16, 0x06 uint32, 0x00 None, 0x01 array + 0x03 quantity 3, 0x02 structure + 0x03 structure length 3, 
-//0x03 boolean, 0x04 bitstring, 0x05 int32, 0x09 octet string, 0x10 int16, 0x11 uint8, 0x12 uint16, 0x13 compact array, 0x16 enum value
-
-//0F0001A4640C       07E70B09 04 0C251E 00 FF C4 00       02              10          0906
-// Start                 Timestamp            Timezone?      struct    struct quantity datatype 
-//0000010000FF 09 0C 07E7.0B.09 04 0C:25:1E 00 FF C4 00  02020906 
-//Timestamp          2023.11.09    12:25:30 
-
-//0000600100FF 09 0E314B464D30323030        323034303332 
-//02020906 00022A0000FF 09 104B464D31323030   323030 323034303332 
-
-//02       03         09      06       0100200700FF    12     08EF     02       02      0F  FF  16   23   
-//Struct length=3 octetstring length=6  Voltage L1   uint16  228.7    struct length=2  int8 -1 enum   V    
-
-// 02     03         0906   0100340700FF 12 08F9     02020F FF 16 23 02030906  #   v l2
-//struct length=3        Voltage L2                      /10   V
-
-//0100480700FF 12 08F2     02020F FF 16 23 02030906  #   v l3
-//                                /10    V 
-//01001F0700FF 12 0000     02020F FE 16 21 02030906  !   c l1
-//Current L1                     /100 
-
-//0100330700FF 12 0000     02020F FE 16 21 02030906  !   c l2
-//0100470700FF 12 0000     02020F FE 16 21 02030906  !   c l3
-
-//0100010700FF 06 00000000 02020F 00 16 1B 02030906 
-//                             /no scale
-
-//0100020700FF 06 00000000 02020F 00 16 1B 02030906 >27
-
-//0100010800FF 06 00000016 02020F 00 16 1E 02030906 >30
-//0100020800FF 06 00000000 02020F 00 16 1E 02030906 >30
-
-//0100030800FF 06 00000007 02020F 00 16 20  >32
-//02     03    09    06   0100040800FF    06   00000000 02   02   0F  00  16  20 
-//struct l=3  octet  l=6  zählerstandQ- uint32    0   struct l=2 int8  0 enum kWH 
-
-
-
-bool kaifa_data_differnce(kaifa_data_t * kaifa, kaifa_data_t * kaifa_old, float offset){
-    return abs(kaifa->voltage_l1-kaifa_old->voltage_l1)>kaifa->voltage_l1*offset || 
-           abs(kaifa->voltage_l2-kaifa_old->voltage_l2)>kaifa->voltage_l2*offset ||
-           abs(kaifa->voltage_l3-kaifa_old->voltage_l3)>kaifa->voltage_l3*offset || 
-           abs(kaifa->current_l1-kaifa_old->current_l1)>kaifa->current_l1*offset ||
-           abs(kaifa->current_l2-kaifa_old->current_l2)>kaifa->current_l2*offset ||
-           abs(kaifa->current_l3-kaifa_old->current_l3)>kaifa->current_l3*offset ||
-           abs(kaifa->active_power_plus-kaifa_old->active_power_plus)>kaifa->active_power_plus*offset ||
-           abs(kaifa->active_power_minus-kaifa_old->active_power_minus)>kaifa->active_power_minus*offset ||
-           abs(kaifa->reactive_power_plus-kaifa_old->reactive_power_plus)>kaifa->reactive_power_plus*offset ||
-           abs(kaifa->reactive_power_minus-kaifa_old->reactive_power_minus)>kaifa->reactive_power_minus*offset ||
-           abs(kaifa->active_energy_plus-kaifa_old->active_energy_plus)>kaifa->active_energy_plus*offset ||
-           abs(kaifa->active_energy_minus-kaifa_old->active_energy_minus)>kaifa->active_energy_minus*offset;
-}
-
-
-void usdp_format_data(uint8_t * frame_buffer, size_t buf_size, kaifa_data_t * kaifa){
-    if(buf_size<32) return;
-
-    memset(frame_buffer, 0, buf_size);
-    frame_buffer[0] = 0x0F;
-    frame_buffer[1] = 0x00;
-
-    frame_buffer[2] = kaifa->epoch >> 24 & 0xFF;
-    frame_buffer[3] = kaifa->epoch >> 16 & 0xFF;
-    frame_buffer[4] = kaifa->epoch >> 8 & 0xFF;
-    frame_buffer[5] = kaifa->epoch & 0xFF;
-
-    frame_buffer[6] = kaifa->scale_voltage;
-    frame_buffer[7] = kaifa->voltage_l1 >> 8 & 0xFF;
-    frame_buffer[8] = kaifa->voltage_l1 & 0xFF;
-    frame_buffer[9] = kaifa->voltage_l2 >> 8 & 0xFF;
-    frame_buffer[10] = kaifa->voltage_l2 & 0xFF;
-    frame_buffer[11] = kaifa->voltage_l3 >> 8 & 0xFF;
-    frame_buffer[12] = kaifa->voltage_l3 & 0xFF;
-
-    frame_buffer[13] = kaifa->scale_current;
-    frame_buffer[14] = kaifa->current_l1 >> 8 & 0xFF;
-    frame_buffer[15] = kaifa->current_l1 & 0xFF;
-    frame_buffer[16] = kaifa->current_l2 >> 8 & 0xFF;
-    frame_buffer[17] = kaifa->current_l2 & 0xFF;
-    frame_buffer[18] = kaifa->current_l3 >> 8 & 0xFF;
-    frame_buffer[19] = kaifa->current_l3 & 0xFF;
-
-    frame_buffer[20] = kaifa->scale_power;
-    frame_buffer[21] = kaifa->active_power_plus >> 8 & 0xFF;
-    frame_buffer[22] = kaifa->active_power_plus & 0xFF;
-    frame_buffer[23] = kaifa->active_power_minus >> 8 & 0xFF;
-    frame_buffer[24] = kaifa->active_power_minus & 0xFF;
-    frame_buffer[25] = kaifa->reactive_power_plus >> 8 & 0xFF;
-    frame_buffer[26] = kaifa->reactive_power_plus & 0xFF;
-    frame_buffer[27] = kaifa->reactive_power_minus >> 8 & 0xFF;
-    frame_buffer[28] = kaifa->reactive_power_minus & 0xFF;
-
-    frame_buffer[29] = kaifa->scale_energy;
-    frame_buffer[30] = kaifa->active_energy_plus >> 8 & 0xFF;
-    frame_buffer[31] = kaifa->active_energy_minus & 0xFF;
-
-
-}
 
 
 void mbus_thread(void * param){
@@ -215,33 +92,22 @@ void mbus_thread(void * param){
 
         memset(&kaifa, 0, sizeof(kaifa_data_t));
         parse_obis_codes(&kaifa, plaintext_data, plaintext_size);
+        char json_buffer[1000] = {0};
+        kaifa_data_to_json(&kaifa, json_buffer);
+        // printf("%s\n", json_buffer);
 
-        if(kaifa_data_differnce(&kaifa, &kaifa_old, 0.05)){
-            memcpy(&kaifa_old, &kaifa, sizeof(kaifa_data_t));
+        memcpy(&kaifa_old, &kaifa, sizeof(kaifa_data_t));
+        xQueueSend(data_queue, &kaifa, 100/portTICK_PERIOD_MS);
 
+        // if(kaifa_data_differnce(&kaifa, &kaifa_old, 0.05)){
             
-        }
+        // }
 
-
-        
     }
 }
 
 
-// void challange_response(){
-//     uint32_t rnd = esp_get_random();
-// }
 
-bool autheticated = false;
-uint32_t frame_counter = 0;
-
-typedef enum state {
-    UNAUTHORIZED = 0x00,
-    AUTH_STARTED = 0x01,
-    AUTHORIZED = 0x02
-}client_state_e;
-
-client_state_e client_state = UNAUTHORIZED;
 
 
 void compute_challenge_response(uint8_t * response, uint8_t * challenge, uint8_t * key){
@@ -255,30 +121,59 @@ void compute_challenge_response(uint8_t * response, uint8_t * challenge, uint8_t
 }
 
 
+bool usdp_is_authenticated(){
+    return usdp_state;
+}
 
-bool usdp_authenticate(uint8_t * mac){
+bool usdp_authenticate(uint8_t * mac, uint8_t * session_key, uint8_t * challenge){
     uint8_t auth_frame[7] = {0xFF, mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]};
-    sim7020e_send_raw_data(auth_frame, 7);
-    ESP_LOGI("USDP","Sending Authframe");
+    uint8_t start_vector[12] = {0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B};
 
-    while(network_has_data()<16){vTaskDelay(100/portTICK_PERIOD_MS);}
+    for(uint8_t i = 0; i < 5; i++){
+        network_send_data(auth_frame, 7);
+        ESP_LOGI("USDP","Sending Authframe");
 
-    uint8_t challenge[16] = {0};
-    network_read_data(challenge, 16);
-    ESP_LOGI("USDP","Challenge received");
-    uint8_t response[33] = {0};
-    response[0] = 0xFF;
-    compute_challenge_response(response+1, challenge, udp_key);
-    ESP_LOG_BUFFER_HEX("USDP", response, 33);
-    sim7020e_send_raw_data(response, 33);
+        memset(challenge, 0, 16);
+        // network_read_data_blocking(challenge, 16);
+        if(network_read_data_blocking_with_timeout(challenge, 16, 3000)<0){
+            ESP_LOGE("USDP","Receive Challenge timeout");
+            continue;
+        }
 
-    while(network_has_data()<1){vTaskDelay(100/portTICK_PERIOD_MS);}
-    
-    uint8_t server_response;
-    network_read_data(&server_response, 1);
-    ESP_LOG_BUFFER_HEX("USDP", &server_response, 1);
-    
-    return server_response==AUTH_SUCCESS;
+        ESP_LOGI("USDP","Challenge received");
+
+        uint8_t response[33] = {0};
+        response[0] = 0xFF;
+
+        uint8_t tag[16] = {0};
+        encrypt_aes_gcm(udp_key, 16, start_vector, 12, challenge, 16, session_key, 16, tag, 0);
+
+        // derive_key(key, 16, challenge, 16);
+        compute_challenge_response(response+1, challenge, session_key);
+        ESP_LOG_BUFFER_HEX("USDP Challenge response", response, 33);
+        network_send_data(response, 33);
+
+        uint8_t server_response = 0;
+        // network_read_data_blocking(&server_response, 1);
+
+        if(network_read_data_blocking_with_timeout(&server_response, 1, 3000)<0){
+            ESP_LOGE("USDP","Server response timeout");
+            continue;
+        }
+        ESP_LOGI("USDP Server Response", "0x%02X",server_response);
+
+        if(server_response==AUTH_FAILED){
+            ESP_LOGE("USDP","Authentication failed");
+            continue;
+        }
+
+        usdp_state = 1;
+
+        return true;
+    }
+
+    usdp_state = 0;
+    return false;
     
 }
 
@@ -288,43 +183,91 @@ void modem_thread(void * param){
     esp_read_mac(mac, ESP_MAC_WIFI_STA);
     char buffer[13] = {0};
     sprintf(buffer, "%02X%02X%02X%02X%02X%02X", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
-    
-    // sim7020e_set_data_received_callback(udp_data_received);
+
+    uint8_t usdp_iv[12] = {0};
+    uint8_t challenge[16] = {0};
+    uint64_t frame_counter = 0;
+    uint8_t frame_counter_offset = 0;
+    uint8_t tag[16] = {0};
+    uint8_t usdp_frame[42] = {0};
+    uint8_t session_key[16] = {0};
+
     sim7020e_init();
+    sim7020e_handle_connection();
 
-    if(sim7020e_connect_udp(SERVER, PORT)){
-        sim7020e_handle_connection();
-        while(!usdp_authenticate(mac)){
-            ESP_LOGE("USDP","Authentication failed");
-            vTaskDelay(1000/portTICK_PERIOD_MS);
-        }
-        ESP_LOGI("USDP","Authenticated");
-        for(;;){
-            kaifa_data_t data = {0};
-            // if(xQueuePeek(data_queue, &data, 100/portTICK_PERIOD_MS)==pdTRUE){
-            //     uint8_t frame_buffer[38] = {0};
-            //     usdp_format_data(frame_buffer, 36, &data);
-            //     sim7020e_send_raw_data(frame_buffer, 36);
+    for(;;){
+        if(!sim7020e_is_connected()){
+            sim7020e_connect_udp(SERVER, PORT);
+        }else{ // connected and ready to authenticate
+            if(!usdp_is_authenticated()){
+                if(usdp_authenticate(mac, session_key, challenge)){
+                    ESP_LOGI("USDP","Authenticated");
+                
+                    frame_counter = (uint64_t)challenge[11]<<56 | (uint64_t)challenge[10]<<48 | (uint64_t)challenge[9]<<40 | (uint64_t)challenge[8]<<32 | (uint64_t)challenge[7]<<24 | (uint64_t)challenge[6]<<16 | (uint64_t)challenge[5]<<8 | challenge[4];
+                    frame_counter_offset = frame_counter % 100;
+                }
+            }else{ // Authenticated and ready to send data
+                kaifa_data_t data = {0};
+                if(xQueuePeek(data_queue, &data, 100/portTICK_PERIOD_MS)==pdTRUE){
+                    
+                    frame_counter+=frame_counter_offset;
+                    memcpy(usdp_iv, &frame_counter, 8);
+                    memcpy(usdp_iv+8, challenge, 4);
+                    
+                    ESP_LOGI("USDP Frame Counter", "%lld", frame_counter);
+                    ESP_LOG_BUFFER_HEX("USDP IV", usdp_iv, 12);
+                    ESP_LOG_BUFFER_HEX("USDP key", udp_key, 16);
 
-            //     while(network_has_data()<=0){vTaskDelay(100/portTICK_PERIOD_MS);}
-            //     uint8_t server_response;
-            //     network_read_data(&server_response, 1);
-            // }
+                    uint8_t kaifa_buffer[36] = {0};
+                    kaifa_data_to_buffer(kaifa_buffer, 36, &data);
+
+                    ESP_LOG_BUFFER_HEX("USDP Data", kaifa_buffer, 36);
+                    
+                    memset(encrypted_data, 0,  ENCRYPTED_SIZE);
+                    size_t length = encrypt_aes_gcm(session_key, sizeof(session_key), usdp_iv, sizeof(usdp_iv), kaifa_buffer, sizeof(kaifa_buffer), encrypted_data, sizeof(encrypted_data), tag, sizeof(tag));
+                    ESP_LOG_BUFFER_HEX("USDP TAG", tag, 16);
+                    usdp_frame[0] = 0x0F; //Frame Type: Data
+                    usdp_frame[1] = 0;    //protocol Version: 0
+                    memcpy(usdp_frame+2, encrypted_data, length); //kaifa data
+                    memcpy(usdp_frame+2+length, tag, 4);          // 4 byte tag for validation;
+                    ESP_LOG_BUFFER_HEX("USDP", usdp_frame, 42);
+
+                    uint8_t server_response = 0;
+                    do{
+                        ESP_LOGI("USDP", "Sending data");
+                        network_send_data(usdp_frame, sizeof(usdp_frame));
+                        if(network_read_data_blocking_with_timeout(&server_response, 1, 10000)<0){
+                            ESP_LOGE("USDP", "Response timeout");
+                        }
+                        ESP_LOGI("USDP", "Response received %02X", server_response);
+                    }while(server_response!=0x44);
+
+                    xQueueReceive(data_queue, &data, 0);
+                    
+                }
+            }
         }
+
     }
+
+    
     
 }
 
 void app_main(void){
 
-    // data_queue = xQueueCreate(100, sizeof(kaifa_data_t));
+    data_queue = xQueueCreate(100, sizeof(kaifa_data_t));
 
     xTaskCreate(mbus_thread, "mbus thread", 2048, NULL, 0, NULL);
     xTaskCreate(modem_thread, "modem thread", 4096, NULL, 0, NULL);
 
 
     // for(;;){
-    //     ESP_LOGI("Main Loop", "Running");
-    //     vTaskDelay(1000);
+    //     kaifa_data_t kaifa;
+    //     kaifa_generate_test_data(&kaifa);
+    //     ESP_LOGI("MAIN", "generated test data");
+
+    //     xQueueSend(data_queue, &kaifa, 100/portTICK_PERIOD_MS);
+    //     vTaskDelay(5000/portTICK_PERIOD_MS);
     // }
 }

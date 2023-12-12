@@ -68,15 +68,15 @@ int16_t mbus_receive(mbus_packet_t * mbus_packet){
     mbus_packet->checksum_calc = mbus_calc_checksum(mbus_packet);
 
     if(mbus_packet->stop==0x16){
-        ESP_LOGI("MBUS", "Complete Frame read");
+        //ESP_LOGI("MBUS", "Complete Frame read");
     }else{
-        ESP_LOGE("MBUS", "Stop is not 0x16!");
+        //ESP_LOGE("MBUS", "Stop is not 0x16!");
     }
 
     if(mbus_packet->checksum_calc==mbus_packet->checksum){
-        ESP_LOGI("MBUS", "Checksum OK");
+        //ESP_LOGI("MBUS", "Checksum OK");
     }else{
-        ESP_LOGE("MBUS", "Checksum failed");
+        //ESP_LOGE("MBUS", "Checksum failed");
     }
     
     // mbus_packet->fraq = mbus_packet->control_information==0x00;
