@@ -8,6 +8,12 @@ void usdp_init(int32_t (*read_callback)(uint8_t *, size_t, uint32_t), void (*sen
     memset(&usdp, 0, sizeof(usdp_t));
     read_data_blocking_with_timeout = read_callback;
     send_data = send_callback;
+
+    nvs_handle_t nvs;
+    ESP_ERROR_CHECK(nvs_open("key_storage", NVS_READWRITE, &nvs));
+    size_t key_len = 16;
+    ESP_ERROR_CHECK(nvs_get_blob(nvs, "key", usdp.secret_key, &key_len));
+    ESP_LOG_BUFFER_HEX("USDP Key", usdp.secret_key, key_len);
 }
 
 void compute_challenge_response(uint8_t * response, uint8_t * challenge, uint8_t * key){
@@ -100,7 +106,7 @@ bool usdp_authenticate(uint8_t * mac, uint8_t * secret_key){
         uint8_t session_key[32] = {0};
         // esp_hmac_calculate(HMAC_KEY4, usdp.challenge, 16, session_key);
 
-        derive_key(session_key, secret_key, usdp.challenge);
+        derive_key(session_key, usdp.secret_key, usdp.challenge);
         ESP_LOG_BUFFER_HEX("HMAC KEY", session_key, 16);
         memcpy(usdp.session_key, session_key, 16);
 

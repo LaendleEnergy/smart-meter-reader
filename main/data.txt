@@ -1,4 +1,4 @@
-
+//0a cd 97 b8 ce 6e e2 31 c9 d4 3d ce ea 70 ee 56 6c 46 69 a5 0c 22 44 10 12 45 c1 41 be 73 fd 95
 //                 *** KUNDENSCHNITTSTELLE ***
 
 // OBIS Code       Bezeichnung                      Wert

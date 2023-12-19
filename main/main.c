@@ -10,6 +10,8 @@
 #include <math.h>
 #include <freertos/queue.h>
 #include "esp_efuse.h"
+#include <nvs_flash.h>
+#include <nvs.h>
 
 
 // MBUS Defines
@@ -85,8 +87,8 @@ void mbus_thread(void * param){
 
         memset(&kaifa, 0, sizeof(kaifa_data_t));
         parse_obis_codes(&kaifa, plaintext_data, plaintext_size);
-        char json_buffer[1000] = {0};
-        kaifa_data_to_json(&kaifa, json_buffer);
+        // char json_buffer[1000] = {0};
+        // kaifa_data_to_json(&kaifa, json_buffer);
         // printf("%s\n", json_buffer);
 
         memcpy(&kaifa_old, &kaifa, sizeof(kaifa_data_t));
@@ -145,6 +147,25 @@ void modem_thread(void * param){
 
 }
 
+void generate_key(){
+    nvs_handle_t nvs;
+    nvs_flash_init();
+    nvs_open("key_storage", NVS_READWRITE, &nvs);
+    size_t key_len = 0;
+    esp_err_t err = nvs_get_blob(nvs, "key", NULL, &key_len);
+    if(err!=ESP_OK || key_len==0){
+        uint8_t secret_key[16] = {0};
+        esp_fill_random(secret_key, 16);
+        ESP_LOG_BUFFER_HEX("KEY Gen", secret_key, 16);
+        nvs_set_blob(nvs, "key", secret_key, 16);
+        ESP_ERROR_CHECK(nvs_commit(nvs));
+    }
+    uint8_t read_key[16] = {0};
+    nvs_get_blob(nvs, "key", read_key, &key_len);
+    nvs_close(nvs);
+    ESP_LOG_BUFFER_HEX("NVS", read_key, key_len);
+}
+
 void app_main(void){ 
 
 
@@ -165,10 +186,7 @@ void app_main(void){
     //     ESP_LOG_BUFFER_HEX("HMAC Key read", comp, 32);
     // }
     
-
-    
-
-
+    generate_key();
 
     data_queue = xQueueCreate(100, sizeof(kaifa_data_t));
 
@@ -178,12 +196,12 @@ void app_main(void){
 
 
 
-    for(;;){
-        kaifa_data_t kaifa;
-        kaifa_generate_test_data(&kaifa);
-        ESP_LOGI("MAIN", "generated test data");
+    // for(;;){
+    //     kaifa_data_t kaifa;
+    //     kaifa_generate_test_data(&kaifa);
+    //     ESP_LOGI("MAIN", "generated test data");
 
-        xQueueSend(data_queue, &kaifa, 100/portTICK_PERIOD_MS);
-        vTaskDelay(5000/portTICK_PERIOD_MS);
-    }
+    //     xQueueSend(data_queue, &kaifa, 100/portTICK_PERIOD_MS);
+    //     vTaskDelay(5000/portTICK_PERIOD_MS);
+    // }
 }

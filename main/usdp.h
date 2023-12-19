@@ -10,6 +10,8 @@
 
 #include <esp_log.h>
 #include <esp_hmac.h>
+#include <nvs.h>
+#include <nvs_flash.h>
 
 #define AUTH_SUCCESS 0x22
 #define AUTH_FAILED 0x11
@@ -20,6 +22,7 @@
 #define NOT_AUTHENTICATED 0
 
 typedef struct{
+    uint8_t secret_key[32];
     uint8_t state;
     uint8_t start_vector[12];
     uint8_t session_key[16];

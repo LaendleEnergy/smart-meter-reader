@@ -92,8 +92,9 @@ void sim7020e_hard_reset(){
 int8_t sim7020e_get_network_registration_status(){
 
     sim7020e_send_command_and_wait_for_response("at+cgreg?", TIMEOUT_1S, 1, 1, "OK");
-    char * mode = strstr(modem_receive_buffer, "+CGREG: ")+strlen("+CGREG: ");
+    char * mode = strstr(modem_receive_buffer, "+CGREG: ");
     if(mode==NULL) return -1;
+    mode+=strlen("+CGREG: ");
 
     char * state_code = mode+2;
 
