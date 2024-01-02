@@ -32,9 +32,44 @@ typedef struct{
     uint8_t challenge[16];
 }mgudp_t;
 
+/**
+ * @brief Initializes the MGUDP communication handler.
+ *
+ * This function initializes the MGUDP communication handler by setting up callback functions for read and send operations.
+ *
+ * @param read_callback Pointer to the function for reading data with blocking and timeout.
+ * @param send_callback Pointer to the function for sending data.
+ */
 void mgudp_init(int32_t (*read_callback)(uint8_t *, size_t, uint32_t), void (*send_callback)(uint8_t *, size_t));
+
+
+/**
+ * @brief Checks if MGUDP is currently authenticated.
+ *
+ * @return True if MGUDP is authenticated, false otherwise.
+ */
 bool mgudp_is_authenticated();
+
+/**
+ * @brief Authenticates with the MGUDP server.
+ *
+ * This function performs the authentication process with the MGUDP server using the provided MAC address and secret key.
+ *
+ * @param mac Pointer to the MAC address for authentication.
+ * @param secret_key Pointer to the secret key for authentication.
+ * @return True if authentication is successful, false otherwise.
+ */
 bool mgudp_authenticate(uint8_t * mac, uint8_t * secret_key);
+
+/**
+ * @brief Sends encrypted data using MGUDP.
+ *
+ * This function sends encrypted data using MGUDP if it is authenticated.
+ *
+ * @param data Pointer to the data to be sent.
+ * @param data_length Length of the data to be sent.
+ * @return True if the data is successfully sent, false otherwise.
+ */
 bool mgudp_send_data_encrypted(uint8_t * data, size_t length);
 
 
