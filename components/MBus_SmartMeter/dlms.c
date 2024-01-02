@@ -55,22 +55,5 @@ int8_t dlms_set_data(dlms_data_t * dlms, mbus_packet_t * mbus_list, size_t mbus_
 
 
 
-size_t decrypt_aes_gcm(uint8_t * key, uint8_t key_len, uint8_t * iv, uint8_t iv_len, uint8_t * cipher_text, size_t cipher_text_len, uint8_t * plaintext, size_t plaintext_len){
-    uint8_t tag[16] = {0};
-    memset(plaintext, 0, plaintext_len);
-
-    mbedtls_gcm_context gcm;
-    mbedtls_gcm_init(&gcm);
-    mbedtls_gcm_setkey(&gcm, MBEDTLS_CIPHER_ID_AES, key, key_len*8 );
-
-    size_t output_size = 0;
-    mbedtls_gcm_starts(&gcm, MBEDTLS_GCM_DECRYPT, iv, iv_len);
-    mbedtls_gcm_update(&gcm, cipher_text, cipher_text_len, plaintext, plaintext_len, &output_size);
-    mbedtls_gcm_finish(&gcm, NULL, 0, NULL, tag, 16);
-
-    mbedtls_gcm_free(&gcm);
-
-    return output_size;
-}
 
 

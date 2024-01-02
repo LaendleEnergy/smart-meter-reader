@@ -6,7 +6,6 @@
 #include <esp_mac.h>
 #include <esp_random.h>
 #include <mbedtls/sha256.h>
-// #include "mbedtls/md.h"
 #include <math.h>
 #include <freertos/queue.h>
 #include "esp_efuse.h"
@@ -46,7 +45,8 @@
 
 #include "sim7020e.h"
 
-#include "usdp.h"
+#include "micro_guard_udp.h"
+#include "utils.h"
 
 
 
@@ -119,14 +119,14 @@ void modem_thread(void * param){
 
     sim7020e_init();
     sim7020e_handle_connection();
-    usdp_init(network_read_data_blocking_with_timeout, network_send_data);
+    mgudp_init(network_read_data_blocking_with_timeout, network_send_data);
 
     for(;;){
         if(!sim7020e_is_connected()){
             sim7020e_connect_udp(SERVER, PORT);
         }else{ // connected and ready to authenticate
-            if(!usdp_is_authenticated()){
-                usdp_authenticate(mac, secret_key);
+            if(!mgudp_is_authenticated()){
+                mgudp_authenticate(mac, secret_key);
             }else{ // Authenticated and ready to send data
                 kaifa_data_t data = {0};
                 if(xQueuePeek(data_queue, &data, 100/portTICK_PERIOD_MS)==pdTRUE){
@@ -135,7 +135,7 @@ void modem_thread(void * param){
                     kaifa_data_to_buffer(kaifa_buffer, 36, &data);
                     ESP_LOG_BUFFER_HEX("USDP Data", kaifa_buffer, 36);
 
-                    if(usdp_send_data_encrypted(kaifa_buffer, sizeof(kaifa_buffer))){
+                    if(mgudp_send_data_encrypted(kaifa_buffer, sizeof(kaifa_buffer))){
                         xQueueReceive(data_queue, &data, 0);
                     }
                     
