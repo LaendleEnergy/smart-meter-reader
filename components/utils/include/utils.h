@@ -7,13 +7,6 @@
 #include <mbedtls/gcm.h>
 
 
-c
-Copy code
-/**
- * @file aes_gcm.h
- * @brief AES-GCM encryption and decryption functions.
- */
-
 /**
  * @brief Encrypts plaintext using AES-GCM.
  *

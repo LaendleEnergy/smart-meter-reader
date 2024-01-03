@@ -78,6 +78,44 @@ int8_t check_response(uint8_t * response, uint8_t * session_key, uint64_t frame_
 
 }
 
+int8_t check_auth_response(uint8_t * response, uint8_t * session_key, uint64_t frame_counter){
+
+    mbedtls_md_context_t md;
+    mbedtls_md_type_t md_type = MBEDTLS_MD_SHA256;
+    mbedtls_md_init(&md);
+
+    uint8_t buffer_OK[9] = {0};
+    memcpy(buffer_OK, &frame_counter, 8);
+    buffer_OK[8] = AUTH_SUCCESS;
+
+    uint8_t buffer_ERR[9] = {0};
+    memcpy(buffer_ERR, &frame_counter, 8);
+    buffer_ERR[8] = AUTH_FAILED;
+
+
+    uint8_t response_comp_OK[32] = {0};
+    uint8_t response_comp_ERR[32] = {0};
+
+    const mbedtls_md_info_t *md_info = mbedtls_md_info_from_type(md_type);
+    mbedtls_md_setup(&md, md_info, 1);
+
+    mbedtls_md_hmac_starts(&md, session_key, 16);
+    mbedtls_md_hmac_update(&md, buffer_OK, 9);
+    mbedtls_md_hmac_finish(&md, response_comp_OK);
+
+    mbedtls_md_hmac_starts(&md, session_key, 16);
+    mbedtls_md_hmac_update(&md, buffer_ERR, 9);
+    mbedtls_md_hmac_finish(&md, response_comp_ERR);
+
+    if(memcmp(response, response_comp_OK, 4)==0){
+        return 1;
+    }else if(memcmp(response, response_comp_ERR, 4)==0){
+        return 0;
+    }
+    return -1;
+
+}
+
 bool mgudp_is_authenticated(){
     return mgudp.state;
 }
@@ -116,18 +154,22 @@ bool mgudp_authenticate(uint8_t * mac, uint8_t * secret_key){
         ESP_LOG_BUFFER_HEX("USDP Challenge response", response, 33);
         send_data(response, 33);
 
-        uint8_t server_response = 0;
+        uint8_t server_response[4] = {0};
         // network_read_data_blocking(&server_response, 1);
-
-        if(read_data_blocking_with_timeout(&server_response, 1, 3000)<0){
+READ_AUTH_RESPONSE:        
+        if(read_data_blocking_with_timeout(server_response, 4, 3000)<0){
             ESP_LOGE("USDP","Server response timeout");
             continue;
         }
-        ESP_LOGI("USDP Server Response", "0x%02X",server_response);
+        // ESP_LOGI("USDP Server Response", "0x%02X",server_response);
 
-        if(server_response==AUTH_FAILED){
+        int8_t resp_stat = check_auth_response(server_response, mgudp.session_key, mgudp.frame_counter);
+        if(resp_stat == 0){
             ESP_LOGE("USDP","Authentication failed");
             continue;
+        }else if(resp_stat == -1){
+            ESP_LOGE("USDP","Not a valid response");
+            goto READ_AUTH_RESPONSE;
         }
 
         mgudp.state = AUTHENTICATED;
@@ -177,7 +219,7 @@ bool mgudp_send_data_encrypted(uint8_t * data, size_t data_length){
         	int8_t resp_stat = check_response(server_response, mgudp.session_key, mgudp.frame_counter);
             if(resp_stat==1){
                 break;
-            }else if(resp_stat == -1){
+            }else if(resp_stat == 0){
                 mgudp.state = NOT_AUTHENTICATED;
                 return false;
             }

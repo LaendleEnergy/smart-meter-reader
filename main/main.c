@@ -56,6 +56,8 @@ uint8_t encrypted_data[PLAINTEXT_SIZE] = {0};
 
 uint8_t key[16] = {0x32, 0x69, 0x31, 0x63, 0x79, 0x79, 0x45, 0x6C, 0x59, 0x37, 0x34, 0x44, 0x73, 0x6D, 0x33, 0x75};
 
+uint8_t secret_key[16] = {0};
+
 
 mbus_packet_t mbus_list[MAX_FRAME_COUNT];
 dlms_data_t dlms;
@@ -159,11 +161,11 @@ void generate_key(){
         nvs_set_blob(nvs, "key", secret_key, 16);
         ESP_ERROR_CHECK(nvs_commit(nvs));
     }
-    uint8_t read_key[16] = {0};
-    nvs_get_blob(nvs, "key", read_key, &key_len);
+    nvs_get_blob(nvs, "key", secret_key, &key_len);
     nvs_close(nvs);
-    ESP_LOG_BUFFER_HEX("NVS", read_key, key_len);
+    ESP_LOG_BUFFER_HEX("NVS", secret_key, key_len);
 }
+
 
 void app_main(void){ 
 
