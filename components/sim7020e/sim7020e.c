@@ -140,7 +140,7 @@ bool sim7020e_apn_manual_config(){
 }
 
 int8_t sim7020e_get_connection_status(){
-    return sim7020e_send_command_and_wait_for_response("at+cipstatus", TIMEOUT_5S, 1, 7, "CLOSED", "CLOSING", "REMOTE CLOSING", "INITIAL", "CONNECTING", "CONNECTED", "CONNECT OK");
+    return sim7020e_send_command_and_wait_for_response("at+cipstatus", TIMEOUT_5S, 1, 8, "PDP DEACT", "CLOSED", "CLOSING", "REMOTE CLOSING", "INITIAL", "CONNECTING", "CONNECTED", "CONNECT OK");
 }
 
 void sim7020e_connect_tcp(char * server, char * port){
@@ -173,7 +173,10 @@ bool sim7020e_connect_udp(char * server, char * port){
     sim7020e_send_command_and_wait_for_response("at+cipmux=0", TIMEOUT_1S, 3, 1, "OK");
     sim7020e_send_command_and_wait_for_response("at+cipmode=1", TIMEOUT_1S, 3, 1, "OK");
     sim7020e_send_command_and_wait_for_response("at+cipclose=0", TIMEOUT_1S, 1, 1, "CLOSE OK");
-    if(sim7020e_get_connection_status()>4){
+    int8_t con_state = sim7020e_get_connection_status();
+    if(con_state==0){
+        sim7020e_apn_manual_config();
+    }else if(con_state>5){
         if(sim7020e_send_command_and_wait_for_response("at+cipchan", TIMEOUT_1S, 1, 1, "CONNECT")==0){
             return true;
         }

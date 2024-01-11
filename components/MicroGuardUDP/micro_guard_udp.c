@@ -78,18 +78,20 @@ int8_t check_response(uint8_t * response, uint8_t * session_key, uint64_t frame_
 
 }
 
-int8_t check_auth_response(uint8_t * response, uint8_t * session_key, uint64_t frame_counter){
+int8_t check_auth_response(uint8_t * response, uint8_t * session_key, uint8_t * challenge){
 
     mbedtls_md_context_t md;
     mbedtls_md_type_t md_type = MBEDTLS_MD_SHA256;
     mbedtls_md_init(&md);
 
+    ESP_LOG_BUFFER_HEX("SESSION KEY", response, 16);
+
     uint8_t buffer_OK[9] = {0};
-    memcpy(buffer_OK, &frame_counter, 8);
+    memcpy(buffer_OK, challenge, 8);
     buffer_OK[8] = AUTH_SUCCESS;
 
     uint8_t buffer_ERR[9] = {0};
-    memcpy(buffer_ERR, &frame_counter, 8);
+    memcpy(buffer_ERR, challenge, 8);
     buffer_ERR[8] = AUTH_FAILED;
 
 
@@ -106,6 +108,9 @@ int8_t check_auth_response(uint8_t * response, uint8_t * session_key, uint64_t f
     mbedtls_md_hmac_starts(&md, session_key, 16);
     mbedtls_md_hmac_update(&md, buffer_ERR, 9);
     mbedtls_md_hmac_finish(&md, response_comp_ERR);
+
+    ESP_LOG_BUFFER_HEX("RESPONSE OK",response_comp_OK, 4);
+    ESP_LOG_BUFFER_HEX("RESPONSE ERR",response_comp_ERR, 4);
 
     if(memcmp(response, response_comp_OK, 4)==0){
         return 1;
@@ -145,7 +150,7 @@ bool mgudp_authenticate(uint8_t * mac, uint8_t * secret_key){
         // esp_hmac_calculate(HMAC_KEY4, mgudp.challenge, 16, session_key);
 
         derive_key(session_key, mgudp.secret_key, mgudp.challenge);
-        ESP_LOG_BUFFER_HEX("HMAC KEY", session_key, 16);
+        ESP_LOG_BUFFER_HEX("Sessionkey", session_key, 16);
         memcpy(mgudp.session_key, session_key, 16);
 
 
@@ -163,7 +168,7 @@ READ_AUTH_RESPONSE:
         }
         // ESP_LOGI("USDP Server Response", "0x%02X",server_response);
 
-        int8_t resp_stat = check_auth_response(server_response, mgudp.session_key, mgudp.frame_counter);
+        int8_t resp_stat = check_auth_response(server_response, mgudp.session_key, mgudp.challenge);
         if(resp_stat == 0){
             ESP_LOGE("USDP","Authentication failed");
             continue;
