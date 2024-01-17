@@ -66,15 +66,6 @@ kaifa_data_t kaifa, kaifa_old;
 QueueHandle_t data_queue;
 
 
-void to_hex_string(char * hex_buffer, uint16_t hex_buffer_size, uint8_t * buffer, uint16_t buffer_size){
-    memset(hex_buffer, 0, hex_buffer_size);
-    char * buf_ptr = hex_buffer;
-    for(uint16_t i = 0; i < buffer_size && i< hex_buffer_size; i++){
-        buf_ptr += sprintf(buf_ptr, "%02X", buffer[i]);
-    }
-}
-
-
 void mbus_thread(void * param){
     mbus_init();
     memset(&kaifa_old, 0, sizeof(kaifa_data_t));
@@ -88,26 +79,15 @@ void mbus_thread(void * param){
 
         memset(&kaifa, 0, sizeof(kaifa_data_t));
         parse_obis_codes(&kaifa, plaintext_data, plaintext_size);
-        // char json_buffer[1000] = {0};
-        // kaifa_data_to_json(&kaifa, json_buffer);
-        // printf("%s\n", json_buffer);
 
-        memcpy(&kaifa_old, &kaifa, sizeof(kaifa_data_t));
-        xQueueSend(data_queue, &kaifa, 100/portTICK_PERIOD_MS);
 
-        // if(kaifa_data_differnce(&kaifa, &kaifa_old, 0.05)){
-            
-        // }
+        if(kaifa_data_differnce(&kaifa, &kaifa_old, 0.05)){
+            memcpy(&kaifa_old, &kaifa, sizeof(kaifa_data_t));
+            xQueueSend(data_queue, &kaifa, 100/portTICK_PERIOD_MS);
+        }
 
     }
 }
-
-
-
-
-
-
-
 
 
 void modem_thread(void * param){
@@ -166,26 +146,30 @@ void generate_key(){
     ESP_LOG_BUFFER_HEX("NVS", secret_key, key_len);
 }
 
+void generate_key_fuse(){
+    ESP_LOGI("HMAC", "Purpose: %d", esp_efuse_get_key_purpose(EFUSE_BLK_KEY5));
+
+    uint8_t hmac_key[32] = {0};
+    uint8_t comp[54] = {0};
+    esp_efuse_read_block(EFUSE_BLK_KEY5, comp, 0, 64*8);
+    ESP_LOG_BUFFER_HEX("HMAC Key read", comp, 64);
+
+
+    if(esp_efuse_block_is_empty(EFUSE_BLK_KEY5) && esp_efuse_key_block_unused(EFUSE_BLK_KEY5)){
+        esp_fill_random(hmac_key, 32);
+        ESP_LOG_BUFFER_HEX("HMAC Key gen", hmac_key, 32);
+        esp_efuse_write_key(EFUSE_BLK_KEY3, ESP_EFUSE_KEY_PURPOSE_HMAC_UP, hmac_key, sizeof(hmac_key));
+
+        esp_efuse_read_block(EFUSE_BLK_KEY5, comp, 0, 32*8);
+        ESP_LOG_BUFFER_HEX("HMAC Key read", comp, 32);
+    }
+}
+
 
 void app_main(void){ 
 
 
-    // ESP_LOGI("HMAC", "Purpose: %d", esp_efuse_get_key_purpose(EFUSE_BLK_KEY5));
-
-    // uint8_t hmac_key[32] = {0};
-    // uint8_t comp[54] = {0};
-    // esp_err_t err = esp_efuse_read_block(EFUSE_BLK_KEY5, comp, 0, 64*8);
-    // ESP_LOG_BUFFER_HEX("HMAC Key read", comp, 64);
-
-
-    // if(esp_efuse_block_is_empty(EFUSE_BLK_KEY5) && esp_efuse_key_block_unused(EFUSE_BLK_KEY5)){
-    //     esp_fill_random(hmac_key, 32);
-    //     ESP_LOG_BUFFER_HEX("HMAC Key gen", hmac_key, 32);
-    //     esp_efuse_write_key(EFUSE_BLK_KEY3, ESP_EFUSE_KEY_PURPOSE_HMAC_UP, hmac_key, sizeof(hmac_key));
-
-    //     esp_err_t err = esp_efuse_read_block(EFUSE_BLK_KEY5, comp, 0, 32*8);
-    //     ESP_LOG_BUFFER_HEX("HMAC Key read", comp, 32);
-    // }
+    // generate_key_fuse();
     
     generate_key();
 
@@ -194,15 +178,4 @@ void app_main(void){
     xTaskCreate(mbus_thread, "mbus thread", 2048, NULL, 0, NULL);
     xTaskCreate(modem_thread, "modem thread", 4096, NULL, 0, NULL);
 
-
-
-
-    // for(;;){
-    //     kaifa_data_t kaifa;
-    //     kaifa_generate_test_data(&kaifa);
-    //     ESP_LOGI("MAIN", "generated test data");
-
-    //     xQueueSend(data_queue, &kaifa, 100/portTICK_PERIOD_MS);
-    //     vTaskDelay(5000/portTICK_PERIOD_MS);
-    // }
 }

@@ -172,7 +172,7 @@ bool sim7020e_connect_udp(char * server, char * port){
 
     sim7020e_send_command_and_wait_for_response("at+cipmux=0", TIMEOUT_1S, 3, 1, "OK");
     sim7020e_send_command_and_wait_for_response("at+cipmode=1", TIMEOUT_1S, 3, 1, "OK");
-    sim7020e_send_command_and_wait_for_response("at+cipclose=0", TIMEOUT_1S, 1, 1, "CLOSE OK");
+    // sim7020e_send_command_and_wait_for_response("at+cipclose=0", TIMEOUT_1S, 1, 1, "CLOSE OK");
     int8_t con_state = sim7020e_get_connection_status();
     if(con_state==0){
         sim7020e_apn_manual_config();
