@@ -19,8 +19,22 @@
 #define DATA_SUCCESS 0x44
 #define DATA_FAILED 0x33
 
+#define MGUDP_AUTH_FRAME 0xFF
+#define MGUDP_DATA_FRAME 0x0F
+#define MGUDP_REQUEST_FRAME 0x1F
+#define MGUDP_RESPONSE_FRAME 0x2F
+
 #define AUTHENTICATED 1
 #define NOT_AUTHENTICATED 0
+
+#define FRAME_HEADER_FOOTER_SIZE 6
+#define MAX_DATA_FRAME_SIZE 256
+#define MAX_DATA_SIZE MAX_DATA_FRAME_SIZE-FRAME_HEADER_FOOTER_SIZE
+#define MAX_REQUEST_FRAME_SIZE 256
+#define MAX_REQUEST_SIZE MAX_REQUEST_FRAME_SIZE-FRAME_HEADER_FOOTER_SIZE
+#define MAX_RECEIVE_SIZE 256
+
+#define SERVER_RESPONSE_SIZE 4
 
 typedef struct{
     uint8_t secret_key[32];
@@ -72,6 +86,17 @@ bool mgudp_authenticate(uint8_t * mac, uint8_t * secret_key);
  */
 bool mgudp_send_data_encrypted(uint8_t * data, size_t length);
 
-
+/**
+ * @brief Requests encrypted data using MGUDP.
+ *
+ * This function requests encrypted data using MGUDP if it is authenticated.
+ *
+ * @param request Pointer to the request to be sent.
+ * @param request_length Length of the request to be sent.
+ * @param response Pointer to the response buffer to receive the requested data.
+ * @param response_length Length of the reponse buffer.
+ * @return True if the data is received successfully, false otherwise.
+ */
+bool mgudp_request_and_receive_data_encrypted(uint8_t * request, size_t request_length, uint8_t * reponse, size_t response_length);
 
 #endif

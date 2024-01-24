@@ -49,12 +49,11 @@
 #include "utils.h"
 
 
-
-
 uint8_t plaintext_data[PLAINTEXT_SIZE] = {0};
 uint8_t encrypted_data[PLAINTEXT_SIZE] = {0};
 
 uint8_t key[16] = {0x32, 0x69, 0x31, 0x63, 0x79, 0x79, 0x45, 0x6C, 0x59, 0x37, 0x34, 0x44, 0x73, 0x6D, 0x33, 0x75};
+bool meter_key_needed = true;
 
 uint8_t secret_key[16] = {0};
 
@@ -63,19 +62,52 @@ mbus_packet_t mbus_list[MAX_FRAME_COUNT];
 dlms_data_t dlms;
 kaifa_data_t kaifa, kaifa_old;
 
-QueueHandle_t data_queue;
+QueueHandle_t data_queue, request_queue, meter_key_queue;
 
+void save_meter_key(uint8_t * meter_key){
+    nvs_handle_t nvs;
+    nvs_flash_init();
+    nvs_open("key_storage", NVS_READWRITE, &nvs);
+    nvs_set_blob(nvs, "meter_key", meter_key, 16);
+    nvs_close(nvs);
+}
+
+void get_meter_key(){
+    nvs_handle_t nvs;
+    nvs_flash_init();
+    nvs_open("key_storage", NVS_READWRITE, &nvs);
+    size_t key_len = 0;
+    esp_err_t err = nvs_get_blob(nvs, "meter_key", NULL, &key_len);
+    if(err!=ESP_OK || key_len==0){
+        uint8_t key_request[4] = {3, 'k','e','y'};
+        xQueueSend(request_queue, key_request, 100/portTICK_PERIOD_MS);
+        return;
+    }
+    uint8_t meter_key[16] = {0};
+    nvs_get_blob(nvs, "meter_key", meter_key, &key_len);
+    xQueueSend(meter_key_queue, meter_key, 100/portTICK_PERIOD_MS);
+    nvs_close(nvs);
+    ESP_LOG_BUFFER_HEX("METER KEY", meter_key, key_len);
+}
 
 void mbus_thread(void * param){
     mbus_init();
     memset(&kaifa_old, 0, sizeof(kaifa_data_t));
+
+    uint8_t meter_key[16] = {0};
+    while(meter_key_needed){
+        if(xQueueReceive(meter_key_queue, meter_key, 100/portTICK_PERIOD_MS)==pdTRUE){
+            save_meter_key(meter_key);
+            meter_key_needed=false;
+        }
+    }
     for(;;){
         size_t mbus_count = mbus_receive_multiple(mbus_list, MAX_FRAME_COUNT);
 
         memset(&dlms, 0, sizeof(dlms_data_t));
         dlms_set_data(&dlms, mbus_list, mbus_count);
 
-        size_t plaintext_size = decrypt_aes_gcm(key, sizeof(key), dlms.start_vector, sizeof(dlms.start_vector), dlms.apdu, dlms.apdu_length, plaintext_data, sizeof(plaintext_data));
+        size_t plaintext_size = decrypt_aes_gcm(meter_key, sizeof(meter_key), dlms.start_vector, sizeof(dlms.start_vector), dlms.apdu, dlms.apdu_length, plaintext_data, sizeof(plaintext_data));
 
         memset(&kaifa, 0, sizeof(kaifa_data_t));
         parse_obis_codes(&kaifa, plaintext_data, plaintext_size);
@@ -109,6 +141,14 @@ void modem_thread(void * param){
             if(!mgudp_is_authenticated()){
                 mgudp_authenticate(mac, secret_key);
             }else{ // Authenticated and ready to send data
+                uint8_t request_data[256] = {0};
+                if(xQueuePeek(request_queue, request_data, 100/portTICK_PERIOD_MS)==pdTRUE){
+                    uint8_t meter_key[16] = {0};
+                    if(mgudp_request_and_receive_data_encrypted(request_data+1, request_data[0], meter_key, sizeof(meter_key))){
+                        xQueueReceive(request_queue, request_data, 0);
+                        xQueueSend(meter_key_queue, meter_key, 100/portTICK_PERIOD_MS);
+                    }
+                }
                 kaifa_data_t data = {0};
                 if(xQueuePeek(data_queue, &data, 100/portTICK_PERIOD_MS)==pdTRUE){
                     
@@ -146,6 +186,8 @@ void generate_key(){
     ESP_LOG_BUFFER_HEX("NVS", secret_key, key_len);
 }
 
+
+
 void generate_key_fuse(){
     ESP_LOGI("HMAC", "Purpose: %d", esp_efuse_get_key_purpose(EFUSE_BLK_KEY5));
 
@@ -173,7 +215,12 @@ void app_main(void){
     
     generate_key();
 
+    get_meter_key();
+
     data_queue = xQueueCreate(100, sizeof(kaifa_data_t));
+    request_queue = xQueueCreate(5, 4);
+    meter_key_queue = xQueueCreate(1, 16);
+
 
     xTaskCreate(mbus_thread, "mbus thread", 2048, NULL, 0, NULL);
     xTaskCreate(modem_thread, "modem thread", 4096, NULL, 0, NULL);
