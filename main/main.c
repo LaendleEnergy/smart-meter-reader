@@ -139,6 +139,7 @@ void modem_thread(void * param){
     sim7020e_init();
     sim7020e_handle_connection();
     mgudp_init(network_read_data_blocking_with_timeout, network_send_data);
+    ESP_LOGI("NETWORK", "Connected");
 
     for(;;){
         if(!sim7020e_is_connected()){
