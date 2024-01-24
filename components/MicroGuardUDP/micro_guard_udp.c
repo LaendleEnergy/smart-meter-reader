@@ -13,7 +13,7 @@ void mgudp_init(int32_t (*read_callback)(uint8_t *, size_t, uint32_t), void (*se
     ESP_ERROR_CHECK(nvs_open("key_storage", NVS_READWRITE, &nvs));
     size_t key_len = 16;
     ESP_ERROR_CHECK(nvs_get_blob(nvs, "key", mgudp.secret_key, &key_len));
-    ESP_LOG_BUFFER_HEX("USDP Key", mgudp.secret_key, key_len);
+    //ESP_LOG_BUFFER_HEX("USDP Key", mgudp.secret_key, key_len);
 }
 
 void compute_challenge_response(uint8_t * response, uint8_t * challenge, uint8_t * key){
@@ -84,7 +84,7 @@ int8_t check_auth_response(uint8_t * response, uint8_t * session_key, uint8_t * 
     mbedtls_md_type_t md_type = MBEDTLS_MD_SHA256;
     mbedtls_md_init(&md);
 
-    ESP_LOG_BUFFER_HEX("SESSION KEY", response, 16);
+    //ESP_LOG_BUFFER_HEX("SESSION KEY", response, 16);
 
     uint8_t buffer_OK[9] = {0};
     memcpy(buffer_OK, challenge, 8);
@@ -109,8 +109,8 @@ int8_t check_auth_response(uint8_t * response, uint8_t * session_key, uint8_t * 
     mbedtls_md_hmac_update(&md, buffer_ERR, 9);
     mbedtls_md_hmac_finish(&md, response_comp_ERR);
 
-    ESP_LOG_BUFFER_HEX("RESPONSE OK",response_comp_OK, 4);
-    ESP_LOG_BUFFER_HEX("RESPONSE ERR",response_comp_ERR, 4);
+    //ESP_LOG_BUFFER_HEX("RESPONSE OK",response_comp_OK, 4);
+    //ESP_LOG_BUFFER_HEX("RESPONSE ERR",response_comp_ERR, 4);
 
     if(memcmp(response, response_comp_OK, 4)==0){
         return 1;
@@ -130,16 +130,16 @@ bool mgudp_authenticate(uint8_t * mac, uint8_t * secret_key){
 
     for(uint8_t i = 0; i < 5; i++){
         send_data(auth_frame, 7);
-        ESP_LOGI("USDP","Sending Authframe");
+        //ESP_LOGI("USDP","Sending Authframe");
 
         memset(mgudp.challenge, 0, 16);
         // network_read_data_blocking(challenge, 16);
         if(read_data_blocking_with_timeout(mgudp.challenge, 16, 3000)<0){
-            ESP_LOGE("USDP","Receive Challenge timeout");
+            //ESP_LOGE("USDP","Receive Challenge timeout");
             continue;
         }
 
-        ESP_LOGI("USDP","Challenge received");
+        //ESP_LOGI("USDP","Challenge received");
 
         uint8_t response[33] = {0};
         response[0] = 0xFF;
@@ -150,30 +150,30 @@ bool mgudp_authenticate(uint8_t * mac, uint8_t * secret_key){
         // esp_hmac_calculate(HMAC_KEY4, mgudp.challenge, 16, session_key);
 
         derive_key(session_key, mgudp.secret_key, mgudp.challenge);
-        ESP_LOG_BUFFER_HEX("Sessionkey", session_key, 16);
+        //ESP_LOG_BUFFER_HEX("Sessionkey", session_key, 16);
         memcpy(mgudp.session_key, session_key, 16);
 
 
         // derive_key(key, 16, challenge, 16);
         compute_challenge_response(response+1, mgudp.challenge, mgudp.session_key);
-        ESP_LOG_BUFFER_HEX("USDP Challenge response", response, 33);
+        //ESP_LOG_BUFFER_HEX("USDP Challenge response", response, 33);
         send_data(response, 33);
 
         uint8_t server_response[4] = {0};
         // network_read_data_blocking(&server_response, 1);
 READ_AUTH_RESPONSE:        
         if(read_data_blocking_with_timeout(server_response, 4, 3000)<0){
-            ESP_LOGE("USDP","Server response timeout");
+            //ESP_LOGE("USDP","Server response timeout");
             continue;
         }
-        // ESP_LOGI("USDP Server Response", "0x%02X",server_response);
+        // //ESP_LOGI("USDP Server Response", "0x%02X",server_response);
 
         int8_t resp_stat = check_auth_response(server_response, mgudp.session_key, mgudp.challenge);
         if(resp_stat == 0){
-            ESP_LOGE("USDP","Authentication failed");
+            //ESP_LOGE("USDP","Authentication failed");
             continue;
         }else if(resp_stat == -1){
-            ESP_LOGE("USDP","Not a valid response");
+            //ESP_LOGE("USDP","Not a valid response");
             goto READ_AUTH_RESPONSE;
         }
 
@@ -197,29 +197,29 @@ bool mgudp_send_data_encrypted(uint8_t * data, size_t data_length){
         memcpy(mgudp_iv, &mgudp.frame_counter, 8);
         memcpy(mgudp_iv+8, mgudp.challenge, 4);
         
-        // ESP_LOGI("USDP Frame Counter", "%lld", mgudp.frame_counter);
-        // ESP_LOG_BUFFER_HEX("USDP IV", mgudp_iv, 12);
-        // ESP_LOG_BUFFER_HEX("USDP key", mgudp.session_key, 16);
+        // //ESP_LOGI("USDP Frame Counter", "%lld", mgudp.frame_counter);
+        // //ESP_LOG_BUFFER_HEX("USDP IV", mgudp_iv, 12);
+        // //ESP_LOG_BUFFER_HEX("USDP key", mgudp.session_key, 16);
 
 
         uint8_t encrypted_data[MAX_DATA_SIZE] = {0};
         uint8_t tag[16] = {0};
         uint8_t mgudp_frame[MAX_DATA_FRAME_SIZE] = {0};
         size_t encrypted_length = encrypt_aes_gcm(mgudp.session_key, sizeof(mgudp.session_key), mgudp_iv, sizeof(mgudp_iv), data, data_length, encrypted_data, data_length, tag, sizeof(tag));
-        ESP_LOG_BUFFER_HEX("USDP TAG", tag, 16);
+        //ESP_LOG_BUFFER_HEX("USDP TAG", tag, 16);
         mgudp_frame[0] = MGUDP_DATA_FRAME; //Frame Type: Data
         mgudp_frame[1] = 0;    //protocol Version: 0
         memcpy(mgudp_frame+2, encrypted_data, encrypted_length); //kaifa data
         memcpy(mgudp_frame+2+encrypted_length, tag, 4);          // 4 byte tag for validation;
-        ESP_LOG_BUFFER_HEX("USDP", mgudp_frame, encrypted_length+FRAME_HEADER_FOOTER_SIZE);
+        //ESP_LOG_BUFFER_HEX("USDP", mgudp_frame, encrypted_length+FRAME_HEADER_FOOTER_SIZE);
 
         uint8_t server_response[SERVER_RESPONSE_SIZE] = {0};
         uint8_t counter = 0;
         while(true){
-            ESP_LOGI("USDP", "Sending data");
+            //ESP_LOGI("USDP", "Sending data");
             send_data(mgudp_frame, encrypted_length+FRAME_HEADER_FOOTER_SIZE);
             if(read_data_blocking_with_timeout(server_response, SERVER_RESPONSE_SIZE, 10000)<0){
-                ESP_LOGE("USDP", "Response timeout");
+                //ESP_LOGE("USDP", "Response timeout");
             }
         	int8_t resp_stat = check_response(server_response, mgudp.session_key, mgudp.frame_counter);
             if(resp_stat==1){
@@ -249,20 +249,20 @@ bool mgudp_request_and_receive_data_encrypted(uint8_t * request, size_t request_
         memcpy(mgudp_iv, &mgudp.frame_counter, 8);
         memcpy(mgudp_iv+8, mgudp.challenge, 4);
         
-        // ESP_LOGI("USDP Frame Counter", "%lld", mgudp.frame_counter);
-        // ESP_LOG_BUFFER_HEX("USDP IV", mgudp_iv, 12);
-        // ESP_LOG_BUFFER_HEX("USDP key", mgudp.session_key, 16);
+        // //ESP_LOGI("USDP Frame Counter", "%lld", mgudp.frame_counter);
+        // //ESP_LOG_BUFFER_HEX("USDP IV", mgudp_iv, 12);
+        // //ESP_LOG_BUFFER_HEX("USDP key", mgudp.session_key, 16);
 
         uint8_t encrypted_request[MAX_REQUEST_SIZE] = {0};
         uint8_t tag[16] = {0};
         uint8_t mgudp_frame[MAX_REQUEST_FRAME_SIZE] = {0};
         size_t encrypted_length = encrypt_aes_gcm(mgudp.session_key, sizeof(mgudp.session_key), mgudp_iv, sizeof(mgudp_iv), request, request_length, encrypted_request, request_length, tag, sizeof(tag));
-        ESP_LOG_BUFFER_HEX("USDP TAG", tag, 16);
+        //ESP_LOG_BUFFER_HEX("USDP TAG", tag, 16);
         mgudp_frame[0] = MGUDP_REQUEST_FRAME; //Frame Type: Request
         mgudp_frame[1] = 0;    //protocol Version: 0
         memcpy(mgudp_frame+2, encrypted_request, encrypted_length); //kaifa data
         memcpy(mgudp_frame+2+encrypted_length, tag, 4);          // 4 byte tag for validation;
-        ESP_LOG_BUFFER_HEX("USDP", mgudp_frame, encrypted_length+FRAME_HEADER_FOOTER_SIZE);
+        //ESP_LOG_BUFFER_HEX("USDP", mgudp_frame, encrypted_length+FRAME_HEADER_FOOTER_SIZE);
 
 
 
@@ -271,19 +271,19 @@ bool mgudp_request_and_receive_data_encrypted(uint8_t * request, size_t request_
         uint8_t calc_response_tag[16] = {0};
         uint8_t counter = 0;
         while(true){
-            ESP_LOGI("USDP", "Requesting data");
+            //ESP_LOGI("USDP", "Requesting data");
             send_data(mgudp_frame, encrypted_length+FRAME_HEADER_FOOTER_SIZE);
 
             if(read_data_blocking_with_timeout(encrypted_response_frame, response_length+FRAME_HEADER_FOOTER_SIZE, 10000)<0){
-                ESP_LOGE("USDP", "Response timeout");
+                //ESP_LOGE("USDP", "Response timeout");
             }
 
             if(encrypted_response_frame[0]==MGUDP_RESPONSE_FRAME){
                 uint8_t response_tag[4] = {0};
                 memcpy(response_tag, encrypted_response_frame+response_length+2, 4);
-
-                encrypt_aes_gcm(mgudp.session_key, sizeof(mgudp.session_key), mgudp_iv, sizeof(mgudp_iv), encrypted_response_frame+2, response_length, response, response_length, calc_response_tag, sizeof(calc_response_tag));
-
+                size_t dec_len = decrypt_aes_gcm(mgudp.session_key, sizeof(mgudp.session_key), mgudp_iv, sizeof(mgudp_iv), encrypted_response_frame+2, response_length, response, response_length);
+                uint8_t dummy_buffer[256] = {0};
+                encrypt_aes_gcm(mgudp.session_key, sizeof(mgudp.session_key), mgudp_iv, sizeof(mgudp_iv), response, response_length, dummy_buffer, sizeof(dummy_buffer), calc_response_tag, sizeof(calc_response_tag));
                 if(memmem(response_tag, 4, calc_response_tag, 4)){
                     return true;
                 }

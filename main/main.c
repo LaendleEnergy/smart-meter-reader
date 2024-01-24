@@ -48,11 +48,14 @@
 #include "micro_guard_udp.h"
 #include "utils.h"
 
+typedef struct {
+    uint8_t request[256];
+    uint8_t size;
+}data_request_t;
 
 uint8_t plaintext_data[PLAINTEXT_SIZE] = {0};
 uint8_t encrypted_data[PLAINTEXT_SIZE] = {0};
 
-uint8_t key[16] = {0x32, 0x69, 0x31, 0x63, 0x79, 0x79, 0x45, 0x6C, 0x59, 0x37, 0x34, 0x44, 0x73, 0x6D, 0x33, 0x75};
 bool meter_key_needed = true;
 
 uint8_t secret_key[16] = {0};
@@ -79,15 +82,17 @@ void get_meter_key(){
     size_t key_len = 0;
     esp_err_t err = nvs_get_blob(nvs, "meter_key", NULL, &key_len);
     if(err!=ESP_OK || key_len==0){
-        uint8_t key_request[4] = {3, 'k','e','y'};
-        xQueueSend(request_queue, key_request, 100/portTICK_PERIOD_MS);
+        data_request_t key_request;
+        memcpy(key_request.request, "key", 3);
+        key_request.size = 3;
+        xQueueSend(request_queue, &key_request, 100/portTICK_PERIOD_MS);
         return;
     }
     uint8_t meter_key[16] = {0};
     nvs_get_blob(nvs, "meter_key", meter_key, &key_len);
     xQueueSend(meter_key_queue, meter_key, 100/portTICK_PERIOD_MS);
     nvs_close(nvs);
-    ESP_LOG_BUFFER_HEX("METER KEY", meter_key, key_len);
+    //ESP_LOG_BUFFER_HEX("METER KEY", meter_key, key_len);
 }
 
 void mbus_thread(void * param){
@@ -99,6 +104,7 @@ void mbus_thread(void * param){
         if(xQueueReceive(meter_key_queue, meter_key, 100/portTICK_PERIOD_MS)==pdTRUE){
             save_meter_key(meter_key);
             meter_key_needed=false;
+            //ESP_LOG_BUFFER_HEX("METER KEY", meter_key, 16);
         }
     }
     for(;;){
@@ -141,11 +147,11 @@ void modem_thread(void * param){
             if(!mgudp_is_authenticated()){
                 mgudp_authenticate(mac, secret_key);
             }else{ // Authenticated and ready to send data
-                uint8_t request_data[256] = {0};
-                if(xQueuePeek(request_queue, request_data, 100/portTICK_PERIOD_MS)==pdTRUE){
+                data_request_t request_data;
+                if(xQueuePeek(request_queue, &request_data, 100/portTICK_PERIOD_MS)==pdTRUE){
                     uint8_t meter_key[16] = {0};
-                    if(mgudp_request_and_receive_data_encrypted(request_data+1, request_data[0], meter_key, sizeof(meter_key))){
-                        xQueueReceive(request_queue, request_data, 0);
+                    if(mgudp_request_and_receive_data_encrypted(request_data.request, request_data.size, meter_key, sizeof(meter_key))){
+                        xQueueReceive(request_queue, &request_data, 0);
                         xQueueSend(meter_key_queue, meter_key, 100/portTICK_PERIOD_MS);
                     }
                 }
@@ -154,7 +160,7 @@ void modem_thread(void * param){
                     
                     uint8_t kaifa_buffer[36] = {0};
                     kaifa_data_to_buffer(kaifa_buffer, 36, &data);
-                    ESP_LOG_BUFFER_HEX("USDP Data", kaifa_buffer, 36);
+                    //ESP_LOG_BUFFER_HEX("USDP Data", kaifa_buffer, 36);
 
                     if(mgudp_send_data_encrypted(kaifa_buffer, sizeof(kaifa_buffer))){
                         xQueueReceive(data_queue, &data, 0);
@@ -189,21 +195,21 @@ void generate_key(){
 
 
 void generate_key_fuse(){
-    ESP_LOGI("HMAC", "Purpose: %d", esp_efuse_get_key_purpose(EFUSE_BLK_KEY5));
+    //ESP_LOGI("HMAC", "Purpose: %d", esp_efuse_get_key_purpose(EFUSE_BLK_KEY5));
 
     uint8_t hmac_key[32] = {0};
     uint8_t comp[54] = {0};
     esp_efuse_read_block(EFUSE_BLK_KEY5, comp, 0, 64*8);
-    ESP_LOG_BUFFER_HEX("HMAC Key read", comp, 64);
+    //ESP_LOG_BUFFER_HEX("HMAC Key read", comp, 64);
 
 
     if(esp_efuse_block_is_empty(EFUSE_BLK_KEY5) && esp_efuse_key_block_unused(EFUSE_BLK_KEY5)){
         esp_fill_random(hmac_key, 32);
-        ESP_LOG_BUFFER_HEX("HMAC Key gen", hmac_key, 32);
+        //ESP_LOG_BUFFER_HEX("HMAC Key gen", hmac_key, 32);
         esp_efuse_write_key(EFUSE_BLK_KEY3, ESP_EFUSE_KEY_PURPOSE_HMAC_UP, hmac_key, sizeof(hmac_key));
 
         esp_efuse_read_block(EFUSE_BLK_KEY5, comp, 0, 32*8);
-        ESP_LOG_BUFFER_HEX("HMAC Key read", comp, 32);
+        //ESP_LOG_BUFFER_HEX("HMAC Key read", comp, 32);
     }
 }
 
@@ -215,12 +221,11 @@ void app_main(void){
     
     generate_key();
 
-    get_meter_key();
-
     data_queue = xQueueCreate(100, sizeof(kaifa_data_t));
-    request_queue = xQueueCreate(5, 4);
+    request_queue = xQueueCreate(1, sizeof(data_request_t));
     meter_key_queue = xQueueCreate(1, 16);
 
+    get_meter_key();
 
     xTaskCreate(mbus_thread, "mbus thread", 2048, NULL, 0, NULL);
     xTaskCreate(modem_thread, "modem thread", 4096, NULL, 0, NULL);
